@@ -20,12 +20,82 @@ H.1a/b/c live-repo violations until the underlying code can be migrated.
 
 from __future__ import annotations
 
+import ast
 import json
 import sys
 from pathlib import Path
 from typing import Iterable, Literal
 
 Severity = Literal["ERROR", "WARN", "INFO"]
+
+
+class ImportTracker:
+    """v1.3.0 (S1) — resolve bound names back to canonical fully-qualified
+    module paths.
+
+    Eliminates the import-aliasing blind spot behind 5 audit findings
+    (S-A4, S-AS3, S-AS4, S-AS6, S-DB5). Pre-v1.3.0, every check that
+    matched `module.function(...)` literal text missed:
+      * `import x as y; y(...)` (aliased import)
+      * `from m import f; f(...)` (from-import)
+      * `from m import f as g; g(...)` (aliased from-import)
+
+    Build one tracker per parsed module:
+
+        tree = ast.parse(source)
+        tracker = ImportTracker(tree)
+
+    Then either look up a bound name directly:
+
+        tracker.module_for("Client")  # "httpx.Client" if `from httpx import Client`
+
+    or resolve an arbitrary AST expression (Name or Attribute chain):
+
+        tracker.canonical_for(call.func)  # walks `h.Client` → "httpx.Client"
+    """
+
+    def __init__(self, tree: ast.AST) -> None:
+        self._bindings: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.asname or alias.name.split(".")[0]
+                    self._bindings[name] = alias.name
+            elif isinstance(node, ast.ImportFrom):
+                if not node.module:
+                    continue
+                for alias in node.names:
+                    name = alias.asname or alias.name
+                    self._bindings[name] = f"{node.module}.{alias.name}"
+
+    def module_for(self, bound_name: str) -> str | None:
+        """Return the canonical module path bound to `name`, or None
+        if the name was never imported in this module."""
+        return self._bindings.get(bound_name)
+
+    def canonical_for(self, expr: ast.expr) -> str | None:
+        """For Name or Attribute chains, return the canonical dotted path.
+
+        Returns None if the chain's head Name isn't a tracked import
+        (e.g. local variables, class-instance attributes).
+
+        Example: with `import httpx as h`, the expression
+        `h.AsyncClient.get` resolves to `"httpx.AsyncClient.get"`.
+        """
+        parts: list[str] = []
+        cur: ast.expr | None = expr
+        while isinstance(cur, ast.Attribute):
+            parts.append(cur.attr)
+            cur = cur.value
+        if not isinstance(cur, ast.Name):
+            return None
+        head = self._bindings.get(cur.id)
+        if head is None:
+            return None
+        if not parts:
+            return head
+        parts.reverse()
+        return f"{head}.{'.'.join(parts)}"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
