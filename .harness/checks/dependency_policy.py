@@ -42,15 +42,15 @@ SPINE_PREFIXES = (
     "frontend/src/hooks/",
 )
 BASELINE = load_baseline("dependency_policy")
-STDLIB_FIRST_PARTY = {
-    "asyncio", "json", "logging", "os", "re", "sys", "typing", "pathlib",
-    "datetime", "collections", "functools", "itertools", "uuid", "enum",
-    "dataclasses", "abc", "hashlib", "math", "io", "time", "random",
-    "subprocess", "shutil", "tempfile", "argparse", "warnings", "string",
-    "operator", "copy", "secrets", "base64", "hmac", "urllib", "concurrent",
-    "contextlib", "inspect", "pickle", "struct", "weakref", "csv",
-    "backend", "src", "tests", "frontend",
-}
+# v1.3.0 S4 — `sys.stdlib_module_names` is the runtime-derived list of
+# every stdlib module name in the running Python (3.10+). Using it
+# closes audit finding S-DP4: pre-v1.3.0, STDLIB_FIRST_PARTY was hand-
+# maintained and missed `tomllib` (3.11+, which the check itself
+# imports!), `zoneinfo` (3.9+), `graphlib` (3.9+), etc.
+STDLIB_FIRST_PARTY = (
+    set(sys.stdlib_module_names)
+    | {"backend", "src", "tests", "frontend"}  # first-party namespaces
+)
 
 
 def _emit(file: Path | str, rule: str, msg: str, suggestion: str, line: int = 1) -> bool:
