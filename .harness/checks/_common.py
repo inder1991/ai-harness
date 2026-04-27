@@ -97,6 +97,28 @@ class ImportTracker:
         parts.reverse()
         return f"{head}.{'.'.join(parts)}"
 
+
+def is_logger_call(call: ast.Call, attrs: set[str]) -> bool:
+    """v1.3.0 (S2) — true iff `call` is `<receiver>.<method>(...)` where
+    method ∈ `attrs` (typically loaded from `logging_policy.yaml`'s
+    `logger_attr_names`).
+
+    Closes audit finding S-A1: pre-v1.3.0 `security_policy_a` matched
+    only `log.` and `logger.` literal receivers, missing `LOG.`,
+    `_log.`, `self.log.`, custom loggers (`audit.`, `metrics.`, etc).
+    Both `logging_policy.py` and `security_policy_a.py` now agree on
+    what "a logger call" means.
+
+    Receiver shape isn't constrained — any Attribute call whose final
+    method matches counts. False-positive control comes from the
+    `attrs` set (which is policy-driven), not from the receiver
+    pattern.
+    """
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return False
+    return func.attr in attrs
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 

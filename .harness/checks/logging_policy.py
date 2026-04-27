@@ -32,7 +32,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".harness/checks"))
 
-from _common import emit, load_baseline, normalize_path  # noqa: E402
+from _common import emit, is_logger_call, load_baseline, normalize_path  # noqa: E402
 
 DEFAULT_POLICY = REPO_ROOT / ".harness" / "logging_policy.yaml"
 EXCLUDE_VIRTUAL_PREFIXES = (
@@ -73,17 +73,16 @@ def _is_excluded(virtual: str) -> bool:
     return any(virtual.startswith(p) for p in EXCLUDE_VIRTUAL_PREFIXES)
 
 
+# v1.3.0 S2: delegate to _common.is_logger_call so logging_policy and
+# security_policy_a stay in sync.
 def _is_logger_call(node: ast.Call, logger_attrs: set[str]) -> bool:
-    func = node.func
-    if isinstance(func, ast.Attribute) and func.attr in logger_attrs:
-        return True
-    return False
+    return is_logger_call(node, logger_attrs)
 
 
 def _contains_logger_call(stmts: list[ast.stmt], logger_attrs: set[str]) -> bool:
     for stmt in stmts:
         for sub in ast.walk(stmt):
-            if isinstance(sub, ast.Call) and _is_logger_call(sub, logger_attrs):
+            if isinstance(sub, ast.Call) and is_logger_call(sub, logger_attrs):
                 return True
     return False
 

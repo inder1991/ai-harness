@@ -27,18 +27,37 @@ H-25:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import shutil
 import subprocess
 import sys
+
+import yaml
 from pathlib import Path
 from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".harness/checks"))
 
-from _common import emit, load_baseline, normalize_path, spine_paths  # noqa: E402
+from _common import emit, is_logger_call, load_baseline, normalize_path, spine_paths  # noqa: E402
+
+# v1.3.0 S2/S6: load logger attribute names from logging_policy.yaml so
+# security_policy_a's log-leak rule sees the same logger surface
+# logging_policy.py enforces. Pre-v1.3.0 it hardcoded `log|logger`.
+_LOGGING_POLICY = REPO_ROOT / ".harness" / "logging_policy.yaml"
+
+
+def _load_logger_attrs() -> set[str]:
+    """Return the set of method names that count as logger emissions."""
+    if not _LOGGING_POLICY.exists():
+        return {"info", "warning", "error", "debug", "exception", "critical"}
+    try:
+        data = yaml.safe_load(_LOGGING_POLICY.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return {"info", "warning", "error", "debug", "exception", "critical"}
+    return set(data.get("logger_attr_names") or [])
 
 DEFAULT_ROOTS = spine_paths("backend_src", ("backend/src",)) + spine_paths("frontend_src", ("frontend/src",))
 EXCLUDE_VIRTUAL_PREFIXES = (
@@ -72,7 +91,8 @@ SSL_UNVERIFIED_RE = re.compile(r'\bssl\._create_unverified_context\s*\(')
 URLLIB3_DISABLE_RE = re.compile(r'\burllib3\.disable_warnings\s*\(')
 TIMEOUT_NONE_RE = re.compile(r'\btimeout\s*=\s*None\b')
 
-LOG_CALL_RE = re.compile(r'\b(log|logger)\.\w+\s*\(([^)]*)\)', re.DOTALL)
+# LOG_CALL_RE removed in v1.3.0 (S6) — replaced by _common.is_logger_call
+# + AST walk in _scan_log_secret_leak. See audit findings S-A1, S-A2.
 SECRET_LEAK_KEY_RE = re.compile(
     r'(Authorization\s*:\s*Bearer|password\s*=|api_key\s*=|secret\s*=|token\s*=)',
     re.IGNORECASE,
@@ -156,18 +176,44 @@ def _scan_outbound_http(path: Path, virtual: str, source: str) -> int:
 
 
 def _scan_log_secret_leak(path: Path, virtual: str, source: str) -> int:
+    """v1.3.0 S6 — AST-based log-leak scan.
+
+    Pre-v1.3.0 used a regex (`LOG_CALL_RE`) that:
+      - matched only `log.` and `logger.` literal receivers (S-A1)
+      - truncated the body capture at the first `)` so kwargs with
+        parens hid the secret-shaped value (S-A2)
+
+    Now walks every `ast.Call`, filters via `_common.is_logger_call`
+    against the policy-driven attribute set, and inspects every arg +
+    keyword value source for the secret-shaped pattern. Skips when the
+    arg/keyword passes through a `redact_*(...)` helper.
+    """
     if path.suffix != ".py":
         return 0
+    try:
+        tree = ast.parse(source, filename=str(path))
+    except SyntaxError:
+        return 0
+    logger_attrs = _load_logger_attrs()
     errors = 0
-    for m in LOG_CALL_RE.finditer(source):
-        body = m.group(2)
-        if SECRET_LEAK_KEY_RE.search(body) and not REDACT_HELPER_RE.search(body):
-            line = source[:m.start()].count("\n") + 1
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and is_logger_call(node, logger_attrs)):
+            continue
+        # Walk every arg + keyword.value. For each subexpression, get its
+        # source text and apply the secret-shaped + redact-helper checks.
+        offenders: list[ast.expr] = list(node.args) + [kw.value for kw in node.keywords]
+        for sub in offenders:
+            sub_src = ast.get_source_segment(source, sub) or ""
+            if not SECRET_LEAK_KEY_RE.search(sub_src):
+                continue
+            if REDACT_HELPER_RE.search(sub_src):
+                continue
             if _emit(path, "Q13.log-secret-leak",
                      "logger call may emit a secret-shaped value without redaction",
                      "wrap value in a redact_*(value) helper from observability/logging.py",
-                     line):
+                     node.lineno):
                 errors += 1
+                break  # one finding per logger call is enough
     return errors
 
 
