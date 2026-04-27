@@ -27,12 +27,22 @@ from typing import Iterable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".harness/checks"))
 
-from _common import emit, load_baseline, normalize_path, spine_paths  # noqa: E402
+from _common import (  # noqa: E402
+    ImportTracker, emit, load_baseline, normalize_path, spine_paths,
+)
 
 DEFAULT_ROOTS = spine_paths("backend_src", ("backend/src",))
 EXCLUDE = (
     "__pycache__", ".venv", "/venv/", "node_modules",
     "tests/harness/fixtures", "site-packages", ".git", ".pytest_cache",
+)
+# v1.3.0 S11 — wrapper exemption. The canonical sync-HTTP wrapper file
+# is the one place where `import requests` is legitimate (it implements
+# the abstraction). Every consumer would otherwise have to baseline its
+# own wrapper's import.
+WRAPPER_PATH_EXEMPTIONS = (
+    "backend/src/utils/http.py",
+    "backend/src/utils/http/__init__.py",
 )
 BASELINE = load_baseline("backend_async_correctness")
 
@@ -67,37 +77,42 @@ def _scan_file(path: Path, virtual: str) -> int:
         return 0
 
     errors = 0
+    is_wrapper = virtual in WRAPPER_PATH_EXEMPTIONS  # S11
+    tracker = ImportTracker(tree)  # S-AS3/AS4/AS6 closure
     for node in ast.walk(tree):
-        # Imports
-        if isinstance(node, ast.Import):
+        # Imports — banned modules. v1.3.0 S11: wrapper file exempt.
+        # ImportTracker also handles aliased forms in subsequent
+        # call-site detection (no longer relying on literal `requests.`).
+        if not is_wrapper and isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name == "requests":
+                root_module = alias.name.split(".")[0]
+                if root_module == "requests":
                     if _emit_unless_baselined(path, "Q7.no-requests",
                             "sync `requests` is banned on the backend spine",
                             "use httpx.AsyncClient (see backend/src/utils/http.py)",
                             node.lineno):
                         errors += 1
-                if alias.name == "aiohttp":
+                if root_module == "aiohttp":
                     if _emit_unless_baselined(path, "Q7.no-aiohttp",
                             "`aiohttp` is banned; only httpx.AsyncClient permitted",
                             "replace aiohttp.ClientSession with httpx.AsyncClient",
                             node.lineno):
                         errors += 1
-        if isinstance(node, ast.ImportFrom) and node.module in {"requests", "aiohttp"}:
-            if _emit_unless_baselined(path, f"Q7.no-{node.module}",
-                    f"`{node.module}` is banned on the backend spine",
-                    "use httpx.AsyncClient",
-                    node.lineno):
-                errors += 1
+        if not is_wrapper and isinstance(node, ast.ImportFrom):
+            root_module = (node.module or "").split(".")[0]
+            if root_module in {"requests", "aiohttp"}:
+                if _emit_unless_baselined(path, f"Q7.no-{root_module}",
+                        f"`{root_module}` is banned on the backend spine",
+                        "use httpx.AsyncClient",
+                        node.lineno):
+                    errors += 1
 
-        # asyncio.run(...) in handler files
+        # asyncio.run(...) in handler files — canonical-aware so
+        # `from asyncio import run; run(...)` also fires.
         if (
             _is_handler_path(virtual)
             and isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "asyncio"
-            and node.func.attr == "run"
+            and tracker.canonical_for(node.func) == "asyncio.run"
         ):
             if _emit_unless_baselined(path, "Q7.no-asyncio-run-in-handler",
                     "asyncio.run() inside an api/ handler",
@@ -105,13 +120,11 @@ def _scan_file(path: Path, virtual: str) -> int:
                     node.lineno):
                 errors += 1
 
-        # sync httpx.Client(...)
+        # sync httpx.Client(...) — canonical-aware so
+        # `from httpx import Client; Client(...)` also fires (S-AS3).
         if (
             isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "httpx"
-            and node.func.attr == "Client"
+            and tracker.canonical_for(node.func) == "httpx.Client"
         ):
             if _emit_unless_baselined(path, "Q7.no-sync-httpx",
                     "httpx.Client() is sync; backend spine requires AsyncClient",
@@ -119,15 +132,13 @@ def _scan_file(path: Path, virtual: str) -> int:
                     node.lineno):
                 errors += 1
 
-        # time.sleep inside async def
+        # time.sleep inside async def — canonical-aware so
+        # `from time import sleep; sleep(1)` also fires (S-AS4).
         if isinstance(node, ast.AsyncFunctionDef):
             for sub in ast.walk(node):
                 if (
                     isinstance(sub, ast.Call)
-                    and isinstance(sub.func, ast.Attribute)
-                    and isinstance(sub.func.value, ast.Name)
-                    and sub.func.value.id == "time"
-                    and sub.func.attr == "sleep"
+                    and tracker.canonical_for(sub.func) == "time.sleep"
                 ):
                     if _emit_unless_baselined(path, "Q7.no-blocking-sleep-in-async",
                             "time.sleep() inside async def blocks the event loop",

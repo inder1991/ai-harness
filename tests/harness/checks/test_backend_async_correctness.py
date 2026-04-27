@@ -28,6 +28,10 @@ FIXTURE_ROOT = REPO_ROOT / "tests/harness/fixtures" / CHECK
         ("asyncio_run_in_handler.py", "Q7.no-asyncio-run-in-handler"),
         ("sync_httpx_client.py", "Q7.no-sync-httpx"),
         ("blocking_sleep_in_async.py", "Q7.no-blocking-sleep-in-async"),
+        # v1.3.0 (S1+S5+S11) — alias / from-import coverage via ImportTracker.
+        ("aliased_requests.py", "Q7.no-requests"),
+        ("from_httpx_client.py", "Q7.no-sync-httpx"),
+        ("from_time_sleep_in_async.py", "Q7.no-blocking-sleep-in-async"),
     ],
 )
 def test_violation_fixture_fires(fixture_name: str, expected_rule: str) -> None:
@@ -44,15 +48,17 @@ def test_violation_fixture_fires(fixture_name: str, expected_rule: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "fixture_name",
+    "fixture_name,pretend",
     [
-        "clean.py",
-        "async_with_to_thread.py",
+        ("clean.py", "backend/src/services/clean.py"),
+        ("async_with_to_thread.py", "backend/src/services/async_with_to_thread.py"),
+        # v1.3.0 (S11) — wrapper file is exempt from the import bans.
+        ("wrapper_imports_requests.py", "backend/src/utils/http.py"),
     ],
 )
-def test_compliant_fixture_silent(fixture_name: str) -> None:
+def test_compliant_fixture_silent(fixture_name: str, pretend: str) -> None:
     assert_check_silent(
         check_name=CHECK,
         target=FIXTURE_ROOT / "compliant" / fixture_name,
-        pretend_path=f"backend/src/services/{fixture_name}",
+        pretend_path=pretend,
     )
