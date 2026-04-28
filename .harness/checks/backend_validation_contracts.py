@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Q10 — Pydantic strict at boundaries.
 
-Eight rules:
+Five rules:
   Q10.api-request-needs-forbid       — request models missing extra="forbid".
   Q10.api-response-needs-frozen      — response models missing frozen=True.
   Q10.agent-needs-forbid-and-frozen  — agent models missing both.

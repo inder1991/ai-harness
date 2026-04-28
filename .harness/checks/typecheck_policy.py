@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Q19 — typecheck enforcement against committed mypy + tsc baselines.
 
-Five rules:
+Six rules:
   Q19.new-typecheck-finding     — mypy/tsc reports a finding NOT in the baseline.
   Q19.baseline-schema-violation — baseline file is neither a JSON array nor an
                                    object containing a `violations` array of
@@ -10,6 +10,9 @@ Five rules:
                                    no docs/decisions/<date>-*.md is staged.
   Q19.mypy-config-missing       — declared mypy strict module path absent.
   Q19.tsc-config-missing        — frontend/tsconfig.json missing strict.
+  Q19.upstream-tool-missing     — mypy or tsc binary not on PATH; emitted as
+                                   a WARN so the consumer knows the gate
+                                   degraded silently to a no-op.
 
 Modes:
   default                  — run mypy+tsc, diff vs baseline, ERROR on new findings.

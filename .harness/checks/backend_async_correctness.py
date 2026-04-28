@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Q7 — backend async-strict correctness check.
 
-Six rules enforced:
+Five rules enforced:
   Q7.no-requests              — `requests` module banned everywhere on backend spine.
   Q7.no-aiohttp               — `aiohttp` banned (use httpx.AsyncClient).
   Q7.no-asyncio-run-in-handler— `asyncio.run(...)` banned inside files whose path contains `api/`.

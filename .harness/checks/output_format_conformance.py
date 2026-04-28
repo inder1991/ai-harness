@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """H-16/H-23 — every check's stdout must match the binding output shape.
 
-One rule:
+Two rules:
   H16.output-format-violation — non-blank stdout line that does not match
                                  `^\\[(ERROR|WARN|INFO)\\] file=.+ rule=.+ message=".+" suggestion=".+"$`
                                  (with a small allowance for VALIDATE_SUMMARY/orchestrator chatter).
+  H16.subprocess-error        — when the check's subprocess itself errors
+                                 (non-zero exit unrelated to a real
+                                 finding) — emitted so the orchestrator
+                                 sees a structured signal of upstream
+                                 failure instead of silent breakage.
 
 Mode of operation:
   * If --target is a single .py file: run that file as a check, capture stdout, validate.

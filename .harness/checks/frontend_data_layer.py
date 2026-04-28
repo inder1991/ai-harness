@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Q2 + Q3 — frontend data layer (state management + API access).
 
-Six rules (presence/api_client deferred to H.2 generators):
+Seven rules (presence/api_client deferred to H.2 generators):
   Q2.no-redux                          — redux/@reduxjs/toolkit/mobx/recoil/jotai banned.
   Q2.zustand-quarantine                — zustand outside frontend/src/stores/.
   Q2.zustand-needs-justification       — zustand inside stores/ without

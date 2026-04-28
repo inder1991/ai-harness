@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Q8 — backend DB layer (gateway quarantine + model separation + raw-SQL).
 
-Eight rules:
+Seven rules:
   Q8.sqlmodel-quarantine     — `sqlmodel` import outside storage/ or models/db/.
   Q8.asyncsession-quarantine — `AsyncSession` import outside storage/.
   Q8.execute-quarantine      — `cursor.execute` / `connection.execute`
