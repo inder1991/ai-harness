@@ -28,6 +28,10 @@ FIXTURE_ROOT = REPO_ROOT / "tests/harness/fixtures" / CHECK
         ("logger_leaks_secret.py", "Q13.log-secret-leak", "backend/src/services/auth.py"),
         # v1.3.0 S7 — `httpx.Timeout(None)` wrap also fires.
         ("httpx_timeout_wrap_none.py", "Q13.outbound-timeout-required", "backend/src/services/fetch.py"),
+        # v1.3.0 S5 — multi-line subprocess.run with shell=True fires (was missed).
+        ("multiline_shell_true.py", "Q13.dangerous-pattern", "backend/src/services/runner.py"),
+        # v1.3.0 S5 — `from os import system; system(...)` fires via ImportTracker.
+        ("aliased_os_system.py", "Q13.dangerous-pattern", "backend/src/services/runner.py"),
     ],
 )
 def test_violation_fires(fixture_name: str, expected_rule: str, pretend_path: str) -> None:
@@ -51,6 +55,8 @@ def test_violation_fires(fixture_name: str, expected_rule: str, pretend_path: st
         ("wrapper_can_use_none.py", "backend/src/utils/http.py"),
         # v1.3.0 S7 — `request.timeout = None` is unrelated attribute.
         ("unrelated_timeout_attr.py", "backend/src/services/transport.py"),
+        # v1.3.0 S5 — trailing comment text `shell=True` is not a violation.
+        ("trailing_shell_true_comment.py", "backend/src/services/x.py"),
     ],
 )
 def test_compliant_silent(fixture_name: str, pretend_path: str) -> None:

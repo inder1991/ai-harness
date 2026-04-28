@@ -128,28 +128,97 @@ def _is_excluded(virtual: str) -> bool:
     return any(virtual.startswith(p) for p in EXCLUDE_VIRTUAL_PREFIXES)
 
 
+_DANGEROUS_BUILTIN_NAMES = {"eval", "exec", "__import__"}
+_DANGEROUS_DOTTED_CANONICAL = {
+    "os.system",
+    "pickle.loads",
+    "subprocess.getoutput",
+}
+_SUBPROCESS_DOTTED_CANONICAL = {
+    "subprocess.run",
+    "subprocess.call",
+    "subprocess.Popen",
+    "subprocess.check_call",
+    "subprocess.check_output",
+}
+
+
 def _scan_dangerous_patterns(path: Path, virtual: str, source: str) -> int:
+    """v1.3.0 S5 — AST-based dangerous-pattern scan.
+
+    Pre-v1.3.0 used line-by-line regex. That:
+      - missed multi-line subprocess calls where `shell=True` was on
+        its own indented line (S-A5)
+      - missed aliased forms like `_eval = eval; _eval(x)` (S-A4)
+      - over-fired on trailing comments containing literal text (S-A8)
+
+    AST-based scan reliably detects:
+      - bare `eval(...) / exec(...) / __import__(...)`
+      - canonical `os.system / pickle.loads / subprocess.getoutput`
+        regardless of import alias
+      - subprocess.* calls with shell=True keyword (any line layout)
+      - yaml.load without an explicit Loader= keyword
+      - JS-side patterns still use regex (no AST parser shipped here)
+    """
     is_python = path.suffix == ".py"
     is_jsx = path.suffix in {".ts", ".tsx", ".js", ".jsx"}
     errors = 0
-    for lineno, line in enumerate(source.splitlines(), 1):
-        stripped = line.strip()
-        if stripped.startswith("#") or stripped.startswith("//"):
-            continue
-        if is_python:
-            for pattern, label in (
-                (DANGEROUS_PYTHON_RE, "dangerous Python builtin"),
-                (SHELL_TRUE_RE, "shell=True on subprocess call"),
-                (YAML_LOAD_UNSAFE_RE, "yaml.load without explicit Loader="),
-            ):
-                m = pattern.search(line)
-                if m:
-                    if _emit(path, "Q13.dangerous-pattern",
-                             f"{label}: `{m.group(0).strip()}`",
-                             "rewrite to a safe alternative; never execute untrusted strings",
-                             lineno):
-                        errors += 1
-        if is_jsx:
+
+    if is_python:
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError:
+            return 0
+        tracker = ImportTracker(tree)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            # Bare builtins: eval/exec/__import__.
+            if isinstance(node.func, ast.Name) and node.func.id in _DANGEROUS_BUILTIN_NAMES:
+                if _emit(path, "Q13.dangerous-pattern",
+                         f"dangerous Python builtin: `{node.func.id}(...)`",
+                         "rewrite to a safe alternative; never execute untrusted strings",
+                         node.lineno):
+                    errors += 1
+                continue
+            canonical = tracker.canonical_for(node.func)
+            if canonical in _DANGEROUS_DOTTED_CANONICAL:
+                if _emit(path, "Q13.dangerous-pattern",
+                         f"dangerous Python call: `{canonical}(...)`",
+                         "rewrite to a safe alternative; never execute untrusted strings",
+                         node.lineno):
+                    errors += 1
+                continue
+            if canonical in _SUBPROCESS_DOTTED_CANONICAL:
+                for kw in node.keywords:
+                    if (
+                        kw.arg == "shell"
+                        and isinstance(kw.value, ast.Constant)
+                        and kw.value.value is True
+                    ):
+                        if _emit(path, "Q13.dangerous-pattern",
+                                 f"shell=True on subprocess call: `{canonical}(..., shell=True, ...)`",
+                                 "rewrite to a safe alternative; never execute untrusted strings",
+                                 node.lineno):
+                            errors += 1
+                        break
+                continue
+            # yaml.load without Loader= keyword.
+            if canonical in {"yaml.load", "yaml.full_load"}:
+                if not any(kw.arg == "Loader" for kw in node.keywords):
+                    # full_load has implicit safe loader → no fire there.
+                    if canonical == "yaml.load":
+                        if _emit(path, "Q13.dangerous-pattern",
+                                 "yaml.load without explicit Loader= keyword",
+                                 "use yaml.safe_load(...) or pass Loader=yaml.SafeLoader",
+                                 node.lineno):
+                            errors += 1
+
+    if is_jsx:
+        for lineno, line in enumerate(source.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("//"):
+                continue
             m = DANGEROUS_JS_RE.search(line)
             if m:
                 if _emit(path, "Q13.dangerous-pattern",
