@@ -1,5 +1,85 @@
 # Releases
 
+## v1.3.0 — Rule-semantics hardening (signed)
+
+Closes the 30 P3 findings from the post-v1.2.1 second-pass audit
+(`docs/plans/2026-04-28-harness-rule-semantics-audit.md`). All checks
+that previously matched literal `module.function(...)` text now use
+canonical resolution (ImportTracker), so aliased and from-import forms
+fire correctly. Single squash release covering both the original
+v1.3.0 (root-cause infra) and v1.3.1 (long-tail polish) plans.
+
+Cross-cutting infrastructure:
+- **`_common.ImportTracker`** — single helper that maps bound names
+  back to canonical fully-qualified module paths. Covers `import`,
+  `import-as`, `from-import`, `from-import-as`. Used by 4+ checks.
+- **`_common.is_logger_call`** — single predicate for "this AST Call
+  is a logger emission". `logging_policy` and `security_policy_a`
+  now agree on what counts.
+- **`Q22.doc-rule-count-mismatch`** — new self-test catches docstring
+  drift; each check's "N rules" claim must match enumerated IDs.
+- **Runtime stdlib detection** — `dependency_policy` uses
+  `sys.stdlib_module_names` instead of a hand-maintained set.
+
+Per-check fixes (audit IDs in parentheses):
+- security_policy_a: AST scan for dangerous patterns + multi-line
+  shell=True (S-A4, S-A5, S-A8); imports-aware outbound HTTP scan
+  + httpx.Timeout(None) wrap detection (S-A3, S-A6, S-A7);
+  log-leak via shared predicate + AST source segments (S-A1, S-A2);
+  docstring drift (S-A9).
+- security_policy_b: policy-driven `router_var_names` (S-B1);
+  Annotated[T, Depends()] + Depends(<Attribute>) auth (S-B2);
+  structural `csrf_dependency_names` instead of substring match
+  (S-B3); FastAPI(middleware=[]) constructor pattern (S-B4); route
+  paths from f-strings + Name references (S-B5); spine_paths
+  consumption (S-B6); dead `verb != "get"` branch removed (S-B7).
+- backend_async_correctness: ImportTracker for asyncio.run /
+  httpx.Client / time.sleep coverage of from-import + aliased forms
+  (S-AS3, S-AS4, S-AS6); wrapper file exemption (S-AS2); docstring
+  drift (S-AS1).
+- backend_db_layer: AST + canonical text() / cursor.execute (S-DB4,
+  S-DB5); raw-SQL scan limited to string literals, docstrings
+  excluded (S-DB2); RAW-SQL-JUSTIFIED line-scoped (S-DB3);
+  inheritance-aware db-model-needs-table (S-DB6); docstring drift
+  (S-DB1).
+- conventions_policy: tightened DOTDOT regex (S-CV1); allow single-
+  dot bare imports for re-exports (S-CV2); strip multi-dot stems
+  before PascalCase (S-CV3); document dunder acceptance (S-CV4).
+- dependency_policy: pyproject extras + Poetry + build-system reqs
+  (S-DP1); separate runtime/dev npm allow-lists (S-DP2); npm version
+  refs + scoped-package handling (S-DP3); runtime stdlib (S-DP4).
+
+Q22 also surfaced 5 NEW docstring drifts beyond the audit
+(validation_contracts, data_layer, frontend_routing camelCase rule
+names, output_format, typecheck) — all fixed in this release.
+
+Tests: 280 → 301+ passing in the harness self-test surface
+(+~25 new fixtures + tests across 9 checks).
+
+## v1.2.1 — P2 polish (signed)
+
+Closes the 9 P2 findings from the post-v1.1.0 audit (B19-B27):
+
+- **B19** — `refresh_baselines._read_existing_count` WARNs on JSON
+  parse errors instead of silently returning 0.
+- **B20** — `load_harness._read_file_safe` records OSError reads in
+  the malformed_files surface.
+- **B21** — `extract.sh` logs `find -delete` failures instead of
+  swallowing.
+- **B22** — `setup_signing.sh --protect` flag for human signers
+  (passphrase-protected key generation); CI default stays
+  passphrase-less.
+- **B23** — `install_pre_commit.sh` falls back to
+  `python3 tools/run_validate.py --fast` when make isn't on PATH.
+- **B24** — `load_harness.collect_cross_cutting` switches to
+  `fnmatch.fnmatchcase` for cross-platform deterministic matching.
+- **B25** — `refresh_baselines._refresh_one` refuses to overwrite a
+  baseline with `[]` when a check exited non-zero with no parseable
+  findings (silent reset guard).
+- **B26** — `_session_start_hook.sh` adds `set -o pipefail`.
+- **B27** — confirmed `harness_policy_schema` covers
+  HARNESS_CARD.yaml (no code change needed).
+
 ## v1.2.0 — P1 hardening batch (signed)
 
 Closes the eight P1 findings from the post-v1.1.0 SDET audit
