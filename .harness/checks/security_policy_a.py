@@ -41,7 +41,9 @@ from typing import Iterable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / ".harness/checks"))
 
-from _common import emit, is_logger_call, load_baseline, normalize_path, spine_paths  # noqa: E402
+from _common import (  # noqa: E402
+    ImportTracker, emit, is_logger_call, load_baseline, normalize_path, spine_paths,
+)
 
 # v1.3.0 S2/S6: load logger attribute names from logging_policy.yaml so
 # security_policy_a's log-leak rule sees the same logger surface
@@ -99,7 +101,19 @@ SECRET_LEAK_KEY_RE = re.compile(
 )
 REDACT_HELPER_RE = re.compile(r'\bredact_\w*\s*\(')
 
-UTILS_HTTP_PREFIX = "backend/src/utils/http"
+# v1.3.0 S7 — tightened from "backend/src/utils/http" (no slash → matched
+# httpx_client.py, http_helpers_v2.py, etc) to a precise allowlist:
+# either the exact wrapper file or anything under the wrapper package.
+# Closes audit S-A7.
+UTILS_HTTP_EXEMPT_PATHS = (
+    "backend/src/utils/http.py",
+    "backend/src/utils/http/__init__.py",
+)
+UTILS_HTTP_EXEMPT_PREFIX = "backend/src/utils/http/"
+
+
+def _is_http_wrapper(virtual: str) -> bool:
+    return virtual in UTILS_HTTP_EXEMPT_PATHS or virtual.startswith(UTILS_HTTP_EXEMPT_PREFIX)
 
 
 def _emit(path: Path, rule: str, msg: str, suggestion: str, line: int) -> bool:
@@ -147,9 +161,31 @@ def _scan_dangerous_patterns(path: Path, virtual: str, source: str) -> int:
 
 
 def _scan_outbound_http(path: Path, virtual: str, source: str) -> int:
+    """v1.3.0 S7 — outbound HTTP scan, imports-aware.
+
+    Pre-v1.3.0 this scan:
+      * decided "is this an httpx file" by checking
+        `"httpx" in source.lower()[:5000]` — long files where httpx
+        was imported on line 5001+ slipped (S-A3).
+      * fired Q13.outbound-timeout-required on any `timeout=None`
+        line, including `request.timeout = None` (unrelated
+        attribute) — false positives. Missed
+        `httpx.Timeout(None)` wrap — false negatives (S-A6).
+      * exempted any path starting with `backend/src/utils/http`
+        (no trailing slash) — over-exempted httpx_client.py,
+        http_helpers_v2.py (S-A7).
+
+    Now AST-based: parse imports up front via ImportTracker, only
+    fire timeout-required on `httpx.<*Client>(...)` /
+    `*.AsyncClient.<get|post|...>(...)` calls whose `timeout=`
+    keyword is `None` or `httpx.Timeout(None)`. Wrapper exemption
+    uses precise path matching.
+    """
     if path.suffix != ".py":
         return 0
     errors = 0
+
+    # TLS-verify rules stay regex-based (line-local; no ambiguity).
     for lineno, line in enumerate(source.splitlines(), 1):
         if line.strip().startswith("#"):
             continue
@@ -164,15 +200,52 @@ def _scan_outbound_http(path: Path, virtual: str, source: str) -> int:
             if pattern.search(line):
                 if _emit(path, rule, message, suggestion, lineno):
                     errors += 1
-        if not virtual.startswith(UTILS_HTTP_PREFIX):
-            m = TIMEOUT_NONE_RE.search(line)
-            if m and "httpx" in source.lower()[:5000]:
+
+    # Wrapper exemption: timeout-required doesn't apply inside the
+    # canonical HTTP wrapper module.
+    if _is_http_wrapper(virtual):
+        return errors
+
+    # Outbound timeout — AST scan rather than regex line scan.
+    try:
+        tree = ast.parse(source, filename=str(path))
+    except SyntaxError:
+        return errors
+    tracker = ImportTracker(tree)
+    # If httpx isn't imported anywhere, skip the call walk entirely.
+    if not any((m or "").split(".")[0] == "httpx" for m in tracker._bindings.values()):  # noqa: SLF001
+        return errors
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        canonical = tracker.canonical_for(node.func)
+        if canonical is None or not canonical.startswith("httpx"):
+            continue
+        for kw in node.keywords:
+            if kw.arg != "timeout":
+                continue
+            if _is_timeout_none(kw.value, tracker):
                 if _emit(path, "Q13.outbound-timeout-required",
                          "httpx call uses timeout=None (unbounded wait)",
                          "set an explicit timeout via httpx.Timeout(...) or use the with_retry wrapper",
-                         lineno):
+                         node.lineno):
                     errors += 1
     return errors
+
+
+def _is_timeout_none(node: ast.expr, tracker: ImportTracker) -> bool:
+    """True if the expression is `None` or `httpx.Timeout(None)` — both
+    represent an unbounded HTTP wait."""
+    if isinstance(node, ast.Constant) and node.value is None:
+        return True
+    if isinstance(node, ast.Call):
+        canonical = tracker.canonical_for(node.func)
+        if canonical == "httpx.Timeout" and node.args:
+            first = node.args[0]
+            if isinstance(first, ast.Constant) and first.value is None:
+                return True
+    return False
 
 
 def _scan_log_secret_leak(path: Path, virtual: str, source: str) -> int:

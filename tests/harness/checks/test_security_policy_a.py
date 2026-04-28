@@ -26,6 +26,8 @@ FIXTURE_ROOT = REPO_ROOT / "tests/harness/fixtures" / CHECK
         ("verify_false_httpx.py", "Q13.tls-verify-required", "backend/src/services/fetch.py"),
         ("timeout_none_httpx.py", "Q13.outbound-timeout-required", "backend/src/services/fetch.py"),
         ("logger_leaks_secret.py", "Q13.log-secret-leak", "backend/src/services/auth.py"),
+        # v1.3.0 S7 — `httpx.Timeout(None)` wrap also fires.
+        ("httpx_timeout_wrap_none.py", "Q13.outbound-timeout-required", "backend/src/services/fetch.py"),
     ],
 )
 def test_violation_fires(fixture_name: str, expected_rule: str, pretend_path: str) -> None:
@@ -45,6 +47,10 @@ def test_violation_fires(fixture_name: str, expected_rule: str, pretend_path: st
         ("yaml_safe_load.py", "backend/src/services/x.py"),
         ("inner_text.tsx", "frontend/src/components/Foo.tsx"),
         ("redacted_logger.py", "backend/src/services/auth.py"),
+        # v1.3.0 S7 — wrapper file is exempt from outbound-timeout-required.
+        ("wrapper_can_use_none.py", "backend/src/utils/http.py"),
+        # v1.3.0 S7 — `request.timeout = None` is unrelated attribute.
+        ("unrelated_timeout_attr.py", "backend/src/services/transport.py"),
     ],
 )
 def test_compliant_silent(fixture_name: str, pretend_path: str) -> None:
