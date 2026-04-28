@@ -328,6 +328,42 @@ def run_tests() -> int:
     return overall
 
 
+FIRST_COMMIT_MARKER = REPO_ROOT / ".harness" / ".first_commit_seen"
+
+
+def _maybe_print_first_commit_banner(rules_count: int, elapsed_s: float) -> None:
+    """Sprint 2 / S2.1 — one-time welcome on the first harness-gated commit.
+
+    Sentinel file: .harness/.first_commit_seen (gitignored). If absent,
+    the banner prints once and the marker is created. Subsequent commits
+    skip silently.
+
+    The marker is created AFTER printing so an interrupted first-commit
+    still triggers the banner on retry.
+    """
+    if FIRST_COMMIT_MARKER.exists():
+        return
+    print()
+    print(f"🎉 Your first harness-gated commit!")
+    print(f"   Checked the repo against {rules_count} rules in {elapsed_s:.1f}s.")
+    print(f"   What's next:")
+    print(f"     ▸ harness rules        — see what's active")
+    print(f"     ▸ harness telemetry    — your team's gate trends after a week")
+    print(f"     ▸ harness rules explain <id>  — why a rule matters")
+    print(f"   (Future commits won't show this banner.)")
+    print()
+    try:
+        FIRST_COMMIT_MARKER.parent.mkdir(parents=True, exist_ok=True)
+        FIRST_COMMIT_MARKER.write_text(
+            "# This sentinel suppresses the first-commit banner on subsequent runs.\n"
+            "# Delete to see it again. Sprint 2 / S2.1.\n"
+        )
+    except OSError:
+        # Q17-EXEMPT: failing to write the marker is non-fatal; worst case
+        # the banner shows again on the next commit. Don't block validate.
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse --fast/--full mode, dispatch lint + typecheck + checks (+ tests). Return aggregate exit code."""
     parser = argparse.ArgumentParser(description="Run harness validations.")
@@ -336,6 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--full", action="store_true", help="Pre-commit / CI gate.")
     args = parser.parse_args(argv)
 
+    start_ts = time.monotonic()
     overall = 0
     overall |= run_lint()
     overall |= run_typecheck(full=args.full)
@@ -347,6 +384,20 @@ def main(argv: list[str] | None = None) -> int:
     status = "PASS" if overall == 0 else "FAIL"
     mode_label = "fast" if args.fast else "full"
     print(f"\nVALIDATE_SUMMARY mode={mode_label} status={status}")
+
+    # Sprint 2 / S2.1 — banner shows once per consumer install.
+    if CHECKS_DIR.exists():
+        rules_count = sum(
+            1 for p in CHECKS_DIR.glob("*.py")
+            if p.name not in {"__init__.py", "_common.py"}
+        )
+    else:
+        rules_count = 0
+    _maybe_print_first_commit_banner(
+        rules_count=rules_count,
+        elapsed_s=time.monotonic() - start_ts,
+    )
+
     return overall
 
 

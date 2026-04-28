@@ -197,6 +197,83 @@ def _truncated_line(path: str, byte_count: int, extra: str = "") -> str:
     )
 
 
+def _status_line() -> str:
+    """Sprint 2 / S2.2 — emit a single status line at the top of the
+    session-start bundle. Tells the AI:
+      - how many rules are active
+      - last `harness check` mtime + status
+      - top firing rule this week (if any)
+      - how to ask for a tour
+
+    All inputs are best-effort — degrades gracefully when the failure
+    log is empty / missing.
+    """
+    import json as _json
+    from datetime import datetime, timedelta, timezone
+
+    # Rules count.
+    checks_dir = REPO_ROOT / ".harness" / "checks"
+    rules = (
+        sum(1 for p in checks_dir.glob("*.py")
+            if p.name not in {"__init__.py", "_common.py"})
+        if checks_dir.exists() else 0
+    )
+
+    # Card version.
+    try:
+        import yaml as _yaml
+        card = REPO_ROOT / ".harness" / "HARNESS_CARD.yaml"
+        version = _yaml.safe_load(card.read_text(encoding="utf-8")).get("version", "")
+    except Exception:  # noqa: BLE001
+        # Q17-EXEMPT: best-effort version label; missing is fine.
+        version = ""
+
+    # Failure log mtime + most-recent status.
+    log = REPO_ROOT / ".harness" / ".failure-log.jsonl"
+    if log.exists():
+        mtime = datetime.fromtimestamp(log.stat().st_mtime, tz=timezone.utc)
+        ago_min = max(0, int((datetime.now(timezone.utc) - mtime).total_seconds() // 60))
+        if ago_min < 60:
+            ago_str = f"{ago_min} min ago"
+        elif ago_min < 60 * 24:
+            ago_str = f"{ago_min // 60} hr ago"
+        else:
+            ago_str = f"{ago_min // (60 * 24)} d ago"
+    else:
+        ago_str = "never"
+
+    # Top firing rule this week.
+    top_rule = None
+    if log.exists():
+        from collections import Counter
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        counter: Counter = Counter()
+        try:
+            for line in log.read_text(encoding="utf-8").splitlines():
+                try:
+                    entry = _json.loads(line)
+                except _json.JSONDecodeError:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(entry["ts"])
+                except (KeyError, ValueError):
+                    continue
+                if ts < cutoff:
+                    continue
+                counter[entry.get("rule", "")] += 1
+            if counter:
+                top_rule = counter.most_common(1)[0]
+        except OSError:
+            pass
+
+    pieces = [f"[ai-harness v{version} active]" if version else "[ai-harness active]"]
+    pieces.append(f"  {rules} rules loaded · last check: {ago_str}")
+    if top_rule:
+        pieces.append(f"  Top firing rule (last 7 days): {top_rule[0]} ({top_rule[1]} fires)")
+    pieces.append('  Ask: "what does the harness know?" for a tour.')
+    return "\n".join(pieces)
+
+
 def render_text(ctx: dict[str, Any], max_bytes: int = DEFAULT_MAX_BYTES) -> str:
     """Render ctx into a budget-capped text block.
 
@@ -223,6 +300,9 @@ def render_text(ctx: dict[str, Any], max_bytes: int = DEFAULT_MAX_BYTES) -> str:
     def fits(text: str) -> bool:
         """True iff appending text would still leave us under max_bytes (or unlimited)."""
         return max_bytes == 0 or used + len(text.encode("utf-8")) <= max_bytes
+
+    # --- Sprint 2 / S2.2: onboarding-aware status line ---
+    add(_status_line() + "\n")
 
     # --- Mandatory tier (always emit, ignore budget) ---
     add("# ROOT (CLAUDE.md)\n")
