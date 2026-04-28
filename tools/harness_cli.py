@@ -55,7 +55,10 @@ VERBS = (
 # Subcommands implemented as of THIS revision. Unimplemented ones print
 # a one-line "coming in <story>" message and exit 0 (not 2 — they're a
 # documented future surface, not a typo).
-IMPLEMENTED: set[str] = {"init", "check"}  # populated as stories land
+IMPLEMENTED: set[str] = {  # populated as stories land
+    "init", "check", "rules", "doctor", "telemetry",
+    "baseline", "upgrade", "rollback",
+}
 
 
 def _read_version() -> str:

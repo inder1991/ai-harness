@@ -100,8 +100,11 @@ def test_harness_color_always_forces_color():
 
 
 def test_unimplemented_verb_prints_friendly_notice():
-    """A verb in the catalog but not yet wired prints a `not yet implemented` notice."""
-    result = _run("init")
+    """A verb in the catalog but not yet wired prints a `not yet implemented` notice.
+
+    `fix` is the canonical unimplemented verb after Sprint 1 (planned
+    for Sprint 2 / S2.3); the other 8 are all wired."""
+    result = _run("fix")
     # Exit 0 (not 2): it's a documented future surface, not a typo.
     assert result.returncode == 0
     combined = result.stdout + result.stderr
@@ -110,13 +113,13 @@ def test_unimplemented_verb_prints_friendly_notice():
 
 
 def test_unimplemented_verb_references_sprint():
-    result = _run("doctor")
+    result = _run("fix")
     combined = result.stdout + result.stderr
-    assert "S1.4" in combined or "Sprint 1" in combined
+    assert "S2.3" in combined or "Sprint 2" in combined
 
 
 def test_unimplemented_verb_includes_roadmap_pointer():
-    result = _run("upgrade")
+    result = _run("fix")
     combined = result.stdout + result.stderr
     assert "roadmap" in combined.lower() or "production-roadmap" in combined.lower()
 
