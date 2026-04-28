@@ -1,5 +1,50 @@
 # Releases
 
+## v2.0.0-rc1 — Sprint 1 complete (release candidate; not for production)
+
+The first release candidate of the v2.0 line. **Sprint 1 is fully landed**;
+Sprints 2-6 add onboarding moments, reliability gates, polyglot, multi-repo
+overlays, and enterprise/compliance hardening before v2.0.0 GA.
+
+What ships:
+
+- **`harness` CLI** — single user-facing surface with 9 verbs (init, check,
+  fix, rules, baseline, telemetry, doctor, upgrade, rollback). Color
+  output (NO_COLOR + isatty + --no-color), unknown-command suggestion,
+  exit-code contract per docs/EXIT_CODES.md.
+- **`harness init`** — stack auto-detection, atomic install (no partial
+  state on failure), pre-commit hook collision handling, green-checkmark
+  summary on first run with zero `[ERROR]` lines.
+- **`harness check`** — humane output formatter with 4 modes
+  (human/json/raw/pre-commit). Severity-grouped (P0_security →
+  P1_correctness → P2_quality → P3_style), why/fix/more per rule,
+  collapsed counts. v1.x raw + pre-commit modes preserved exactly.
+- **`harness rules`** — list/explain/show-fixtures/trending. The AI
+  reads structured findings and looks up the why autonomously.
+- **`harness baseline`** — refresh/show/add/prune. `add` requires a
+  written `--reason`; appends to `_REASONS.md` audit log.
+- **`harness telemetry`** — last-7-days summary + trends, opt-in only,
+  corrupt-line + clock-skew safe.
+- **`harness doctor`** — substrate + PATH-tool diagnosis with
+  actionable remediations. Exit 6 on any unrecoverable issue.
+- **`harness upgrade` / `harness rollback`** — signed-tag overlays
+  with `.upgrade_history.txt`. `--auto-rollback-on-failure`.
+
+Sprint 0 foundations also shipped (already in v2.0.0-alpha):
+`severity_map.yaml` covering all 95 rules, 65-test permanent
+regression suite, 17-fixture stack-detection corpus, cross-platform
+CI matrix, coverage tooling, EXIT_CODES.md, Node-pack ADR.
+
+Test surface: 301 (v1.3.1) → **566 passed / 1 skipped** (+265). Coverage gate
+green at 65% baseline; 95% target by Sprint 3.
+
+README rewritten from 601 lines (v1.3.1's deep-dive) → 213 lines
+(DX-first landing page). The full deep-dive is preserved at
+`docs/INTERNALS.md`.
+
+NOT for production adoption — wait for v2.0.0 GA after Sprint 2's
+onboarding moments + auto-fixers ship.
+
 ## v1.3.1 — README rewrite (signed; docs only — no behavior change)
 
 Documentation patch on top of v1.3.0. Rewrites `README.md` from a
