@@ -8,7 +8,7 @@
 
 ## TL;DR
 
-`ai-harness` is a directory of policy files (`.harness/`), a few orchestration tools (`tools/`), and 30 deterministic checks that ride alongside your code. At AI session start, a loader bundles the relevant slice into the AI's context window so the AI knows your project's rules and what already exists. At pre-commit and at CI, an orchestrator runs every check against the changes; violations block the commit or the PR.
+`ai-harness` is a directory of policy files (`.harness/`), a few orchestration tools (`tools/`), and 35 deterministic checks (30 enforcement + 5 self-tests) that ride alongside your code. At AI session start, a loader bundles the relevant slice into the AI's context window so the AI knows your project's rules and what already exists. At pre-commit and at CI, an orchestrator runs every check against the changes; violations block the commit or the PR.
 
 The substrate is published from this repo as **GPG-signed git tags**. Each consumer pins a version (`.harness-version`) and pulls updates with `tools/sync_harness.py --trust-key 73A7AF8F04F40EC9`.
 
@@ -32,7 +32,7 @@ When you let an AI write code in a real codebase, three things go wrong:
 
 - **Knowledge** — every session starts with the rules + the inventory of what exists, loaded into context automatically.
 - **Persistence** — the rules live in version-controlled files, not chat history. They survive every session reset.
-- **Enforcement** — 30 deterministic checks gate every commit and every PR. The AI doesn't *promise* to follow the rules; the gate doesn't let drift through.
+- **Enforcement** — 30 enforcement checks (plus 5 that validate the harness itself) gate every commit and every PR. The AI doesn't *promise* to follow the rules; the gate doesn't let drift through.
 
 ---
 
@@ -123,7 +123,7 @@ That's a regression dashboard with **zero API spend**. Not as good as real evals
 
 ```
 .harness/
-├── checks/                # 30 deterministic Python checks
+├── checks/                # 35 deterministic Python checks (30 enforcement + 5 self-test)
 ├── generators/            # 20 deterministic generators
 ├── generated/             # auto-built JSON output (gitignored)
 ├── baselines/             # per-rule grandfather lists for legacy code
@@ -135,7 +135,7 @@ That's a regression dashboard with **zero API spend**. Not as good as real evals
 
 #### `.harness/checks/` — the rule enforcers
 
-30 small Python scripts. Each reads source code (with `ast` and/or regex) and emits findings in the H-16 format. Examples:
+35 small Python scripts (30 enforcement, 5 self-test). Each reads source code (with `ast` and/or regex) and emits findings in the H-16 format. Examples:
 
 | Check | Rules | What it catches |
 |-------|-------|-----------------|
@@ -149,8 +149,17 @@ That's a regression dashboard with **zero API spend**. Not as good as real evals
 | `logging_policy.py` | Q16 | f-string in log call; bare `except:` swallowing errors |
 | `error_handling_policy.py` | Q17 | `except: pass`; `raise NewError(...)` without `from exc` |
 | `documentation_policy.py` | Q15 | Public function/class missing docstring; ADR required on substrate change |
-| `harness_card_version.py` | Q21 | `HARNESS_CARD.yaml.version` drift from `.harness-version` |
-| `rule_count_conformance.py` | Q22 | Check docstring claims "N rules" but enumerates a different count |
+
+Plus 5 **self-test checks** that validate the harness *itself* using the same machinery it offers consumers:
+
+| Self-test check | Rule | What it enforces about the harness |
+|-----------------|------|------------------------------------|
+| `output_format_conformance.py` | H-16 | Every check's stdout matches the canonical `[SEVERITY] file=…:LINE rule=… message="…" suggestion="…"` shape |
+| `harness_fixture_pairing.py` | H-24 | Every check has paired `compliant/` + `violation/` fixtures under `tests/harness/fixtures/<check>/` |
+| `harness_rule_coverage.py` | H-21 | Every rule ID referenced in plans/docs has a check (or is in `rule_coverage_exemptions.yaml` with a `reason:`) |
+| `harness_policy_schema.py` | — | Every `.harness/*.yaml` validates against its JSON Schema in `.harness/schemas/` |
+| `harness_card_version.py` | Q21 | `HARNESS_CARD.yaml.version` matches `.harness-version` (stripped of leading `v`) |
+| `rule_count_conformance.py` | Q22 | Each check's docstring "N rules" claim matches the enumerated rule IDs |
 
 Every check follows the same template, so the orchestrator parses them all the same way. Each rule ID has a paired fixture under `tests/harness/fixtures/<check>/{compliant,violation}/` — `harness_fixture_pairing.py` enforces this.
 
@@ -399,7 +408,7 @@ The harness is published from one source repo as signed tags. Each consumer pins
 
 `CLAUDE.md` is read-only context. The only verification is "did the AI happen to follow the rules this time?"
 
-The harness has 30 deterministic checks at pre-commit, the same checks in CI, baselines that block widening, a failure log that surfaces "rule X fired 47 times this week" trends.
+The harness has 35 deterministic checks (30 enforcement + 5 self-test) at pre-commit, the same checks in CI, baselines that block widening, a failure log that surfaces "rule X fired 47 times this week" trends.
 
 ### 6. CLAUDE.md mixes facts and rules. The harness separates them.
 
