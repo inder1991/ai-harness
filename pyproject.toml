@@ -35,6 +35,11 @@ dev = [
   "hypothesis>=6",
 ]
 
+# Sprint 1 / S1.1 — `harness` CLI binary.
+# After `pip install -e .`, the user gets a `harness` command on PATH.
+[project.scripts]
+harness = "tools.harness_cli:main"
+
 # Coverage config.
 # Sprint 0 / S0.5 — ≥95% line + branch coverage on tools/ and .harness/checks/.
 # Sprint 0 baseline establishes the gate; later sprints don't regress.
