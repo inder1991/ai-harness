@@ -1,0 +1,41 @@
+# Sprint 0 / S0.7 — mutation testing baseline.
+#
+# Why this file exists:
+#   `mutmut` (or `cosmic-ray`) generates mutations of source code and
+#   re-runs the test suite. A surviving mutation = a test gap. Mutation
+#   testing finds the cases unit tests miss.
+#
+# Sprint 0 establishes the baseline file structure. Sprint 3 (S3.6) is
+# the first iteration of "improve survival rate by ≥20%."
+#
+# The first real mutation run will populate this with measured numbers.
+#
+# How to run (when pip-install is available):
+#
+#   .venv/bin/pip install mutmut
+#   .venv/bin/mutmut run --paths-to-mutate=tools/
+#   .venv/bin/mutmut results
+#
+# Or, with CI integration, use `cosmic-ray` for a ratchetable percentage.
+
+# ─────────────────────────────────────────────────────────────────────
+# Sprint 0 baseline (placeholder — populate on first real run)
+# ─────────────────────────────────────────────────────────────────────
+# Date            : 2026-04-29
+# Coverage source : tools/, .harness/checks/_common.py
+# Total mutants   : <pending first run>
+# Killed          : <pending>
+# Survived        : <pending>
+# Timeout         : <pending>
+# Survival rate   : <pending>
+#
+# Per-module breakdown (top-survivors first; populate after run):
+#   tools/_common.py           : <pct>
+#   tools/load_harness.py      : <pct>
+#   tools/run_validate.py      : <pct>
+#   tools/sync_harness.py      : <pct>
+#   tools/init_harness.py      : <pct>
+#   tools/refresh_baselines.py : <pct>
+#   .harness/checks/_common.py : <pct>
+#
+# Sprint 3 / S3.6 target: reduce survival rate by ≥20% from this baseline.
