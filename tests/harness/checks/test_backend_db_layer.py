@@ -24,6 +24,12 @@ FIXTURE_ROOT = REPO_ROOT / "tests/harness/fixtures" / CHECK
         ("raw_sql_unjustified.py", "Q8.raw-sql-unjustified", "backend/src/services/report.py"),
         ("api_model_with_table.py", "Q8.api-model-no-table", "backend/src/models/api/incident_response.py"),
         ("cursor_execute_outside_storage.py", "Q8.execute-quarantine", "backend/src/services/migrate.py"),
+        # v1.3.1 S15 — alias `sa.text(...)` resolves via ImportTracker.
+        ("aliased_text_call.py", "Q8.text-call-outside-analytics", "backend/src/services/report.py"),
+        # v1.3.1 S15 — `self.cursor.execute(...)` attribute-chain receiver.
+        ("self_cursor_execute.py", "Q8.execute-quarantine", "backend/src/services/migrate.py"),
+        # v1.3.1 S13 — actual SQL string literal still fires (sanity).
+        ("raw_sql_in_log_message.py", "Q8.raw-sql-unjustified", "backend/src/services/report.py"),
     ],
 )
 def test_violation_fixture_fires(fixture_name: str, expected_rule: str, pretend_path: str) -> None:
@@ -41,6 +47,11 @@ def test_violation_fixture_fires(fixture_name: str, expected_rule: str, pretend_
         ("storage_gateway.py", "backend/src/storage/gateway.py"),
         ("api_model.py", "backend/src/models/api/incident_response.py"),
         ("raw_sql_justified.py", "backend/src/storage/analytics.py"),
+        # v1.3.1 S13 — log-message prose containing "INSERT failed…" must
+        # not fire (was a regex false positive pre-v1.3.0).
+        ("raw_sql_log_template_only.py", "backend/src/services/runner.py"),
+        # v1.3.1 S14 — RAW-SQL-JUSTIFIED on the preceding line silences.
+        ("raw_sql_line_justified.py", "backend/src/storage/analytics.py"),
     ],
 )
 def test_compliant_fixture_silent(fixture_name: str, pretend_path: str) -> None:
