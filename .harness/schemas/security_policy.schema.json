@@ -5,6 +5,16 @@
   "additionalProperties": false,
   "required": ["auth_dependency_names", "auth_decorator_names", "rate_limit_exempt", "csrf_exempt"],
   "properties": {
+    "router_var_names": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "v1.3.0 S8: variable names whose .<verb>(path) calls are treated as route decorators. Defaults to [router, app] when absent."
+    },
+    "csrf_dependency_names": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "v1.3.0 S9: annotation class names that satisfy CSRF coverage. Defaults to [CsrfProtect] when absent."
+    },
     "auth_dependency_names": {
       "type": "array",
       "items": {"type": "string", "minLength": 1}

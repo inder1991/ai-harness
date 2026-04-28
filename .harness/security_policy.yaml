@@ -1,3 +1,18 @@
+# v1.3.0 S8 — `router_var_names` lists every variable name that can
+# legitimately receive `.<verb>(path)` calls and be treated as a route
+# decorator. Pre-v1.3.0 this set was hardcoded to {router, app}, which
+# silently skipped checks against `v1_router`, `users_router`, etc.
+router_var_names:
+  - router
+  - app
+
+# v1.3.0 S9 — `csrf_dependency_names` is the structural set of
+# annotation class names that satisfy CSRF coverage on a route.
+# Pre-v1.3.0 used a substring `in ann_src` check that accepted
+# `NoCsrfProtectNeeded` etc. (S-B3 false negative).
+csrf_dependency_names:
+  - CsrfProtect
+
 auth_dependency_names:
   - get_current_user
   - require_user

@@ -58,23 +58,143 @@ def _load_policy(path: Path) -> dict:
         return yaml.safe_load(fh) or {}
 
 
-def _route_decorator_info(node: ast.AST) -> tuple[str, str] | None:
-    """Returns (verb, path) if `node` is a `@router.<verb>("<path>")` decorator."""
+def _route_decorator_info(
+    node: ast.AST,
+    router_vars: set[str],
+    module_constants: dict[str, str],
+) -> tuple[str, str] | None:
+    """Returns (verb, path) if `node` is a `@<router>.<verb>(<path>)` decorator.
+
+    v1.3.0 S8 — `router_vars` policy-driven (router_var_names),
+    not hardcoded {router, app}.
+
+    v1.3.0 S10 — accepts:
+      * literal string paths: `router.post("/x")`
+      * f-strings reconstructed with `{name}` placeholders:
+        `router.post(f"/api/{prefix}/x")` → `"/api/{prefix}/x"`
+      * Name references resolved from module-level Constant assignments:
+        `PATH = "/x"; router.post(PATH)` → `"/x"`
+
+    Drops the dead `verb != "get"` branch (S-B7); routes are filtered
+    upstream by MUTATING_VERBS anyway.
+    """
     if not isinstance(node, ast.Call):
         return None
     if not (isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name)):
         return None
-    if node.func.value.id not in {"router", "app"}:
+    if node.func.value.id not in router_vars:
         return None
     verb = node.func.attr.lower()
-    if verb not in MUTATING_VERBS and verb != "get":
+    if verb not in MUTATING_VERBS:
         return None
-    if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
-        return verb, node.args[0].value
+    if not node.args:
+        return None
+    path_str = _resolve_path_arg(node.args[0], module_constants)
+    if path_str is None:
+        return None
+    return verb, path_str
+
+
+def _resolve_path_arg(node: ast.expr, module_constants: dict[str, str]) -> str | None:
+    """Reconstruct a route path expression as a normalized string.
+
+    v1.3.0 S10 — pre-v1.3.0 only matched ast.Constant(str). f-strings
+    and Name references slipped (S-B5).
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for piece in node.values:
+            if isinstance(piece, ast.Constant) and isinstance(piece.value, str):
+                parts.append(piece.value)
+            elif isinstance(piece, ast.FormattedValue):
+                if isinstance(piece.value, ast.Name):
+                    parts.append("{" + piece.value.id + "}")
+                else:
+                    parts.append("{...}")
+        return "".join(parts)
+    if isinstance(node, ast.Name) and node.id in module_constants:
+        return module_constants[node.id]
+    return None
+
+
+def _collect_module_constants(tree: ast.AST) -> dict[str, str]:
+    """Capture module-level `NAME = "..."` assignments so route decorators
+    that reference path constants can resolve them (v1.3.0 S10)."""
+    out: dict[str, str] = {}
+    for node in getattr(tree, "body", []):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if (isinstance(target, ast.Name)
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)):
+                out[target.id] = node.value.value
+    return out
+
+
+def _name_in_annotation(annotation: ast.expr, target_names: set[str]) -> bool:
+    """Walk an annotation looking for a Name whose id is in `target_names`.
+
+    Handles Annotated[T, ...] subscripts. Returns True only when a Name
+    *exactly equals* one of the target names — substring matches like
+    pre-v1.3.0's `"CsrfProtect" in ann_src` over-fire on
+    `NoCsrfProtectNeeded` (S-B3 false negative).
+    """
+    if isinstance(annotation, ast.Name):
+        return annotation.id in target_names
+    if isinstance(annotation, ast.Subscript):
+        for sub in ast.walk(annotation):
+            if isinstance(sub, ast.Name) and sub.id in target_names:
+                return True
+    return False
+
+
+def _depends_callee_name(call: ast.Call) -> str | None:
+    """Inside `Depends(<expr>)`, return the name of the callee.
+
+    Accepts both `ast.Name` and `ast.Attribute` (S-B2: pre-v1.3.0
+    only matched Name). For `Depends(auth.get_current_user)` returns
+    `"get_current_user"` so name matching works regardless of
+    receiver shape.
+    """
+    if not call.args:
+        return None
+    inner = call.args[0]
+    if isinstance(inner, ast.Name):
+        return inner.id
+    if isinstance(inner, ast.Attribute):
+        return inner.attr
+    return None
+
+
+def _annotated_depends_callee(annotation: ast.expr) -> str | None:
+    """If `annotation` is `Annotated[T, Depends(<f>), ...]`, return the
+    name of `<f>`. Else None.
+
+    v1.3.0 S8 — closes S-B2: the FastAPI 0.95+ idiomatic auth
+    pattern (`user: Annotated[User, Depends(get_current_user)]`)
+    was previously invisible to the auth check.
+    """
+    if not isinstance(annotation, ast.Subscript):
+        return None
+    # Annotated[T, Depends(...)]: slice may be a Tuple of arguments.
+    slice_node = annotation.slice
+    elts: list[ast.expr] = []
+    if isinstance(slice_node, ast.Tuple):
+        elts = list(slice_node.elts)
+    else:
+        elts = [slice_node]
+    for elt in elts:
+        if (isinstance(elt, ast.Call)
+                and isinstance(elt.func, ast.Name)
+                and elt.func.id == "Depends"):
+            return _depends_callee_name(elt)
     return None
 
 
 def _has_auth_dep(fn, auth_dep_names: set[str], auth_dec_names: set[str]) -> bool:
+    """v1.3.0 S8 — covers Annotated[T, Depends(f)] and Depends(<Attribute>)."""
     for dec in fn.decorator_list:
         name = None
         if isinstance(dec, ast.Name):
@@ -85,17 +205,20 @@ def _has_auth_dep(fn, auth_dep_names: set[str], auth_dec_names: set[str]) -> boo
             return True
     args = list(fn.args.args) + list(fn.args.kwonlyargs)
     for arg in args:
+        # PEP 593 Annotated[T, Depends(f)] (FastAPI 0.95+).
+        if arg.annotation is not None:
+            callee = _annotated_depends_callee(arg.annotation)
+            if callee and callee in auth_dep_names:
+                return True
         default = _arg_default(fn, arg)
         if default is None:
             continue
-        if (
-            isinstance(default, ast.Call)
-            and isinstance(default.func, ast.Name)
-            and default.func.id == "Depends"
-            and default.args
-        ):
-            inner = default.args[0]
-            if isinstance(inner, ast.Name) and inner.id in auth_dep_names:
+        # `arg = Depends(get_current_user)` or `arg = Depends(auth.get_current_user)`.
+        if (isinstance(default, ast.Call)
+                and isinstance(default.func, ast.Name)
+                and default.func.id == "Depends"):
+            callee = _depends_callee_name(default)
+            if callee and callee in auth_dep_names:
                 return True
     return False
 
@@ -130,13 +253,18 @@ def _has_rate_limit_decorator(fn) -> bool:
     return False
 
 
-def _has_csrf_dep(fn) -> bool:
+def _has_csrf_dep(fn, csrf_dep_names: set[str]) -> bool:
+    """v1.3.0 S9 — structural Name match instead of substring.
+
+    Pre-v1.3.0 used `"CsrfProtect" in ast.dump(annotation)` which
+    accepted `NoCsrfProtectNeeded`, `MyCsrfProtectStub`, etc.
+    `csrf_dep_names` is policy-driven (defaults to {"CsrfProtect"}).
+    """
     args = list(fn.args.args) + list(fn.args.kwonlyargs)
     for arg in args:
         if arg.annotation is None:
             continue
-        ann_src = ast.dump(arg.annotation)
-        if "CsrfProtect" in ann_src:
+        if _name_in_annotation(arg.annotation, csrf_dep_names):
             return True
     return False
 
@@ -145,13 +273,18 @@ def _module_has_csrf_middleware(tree: ast.AST) -> bool:
     """Detect app-level CSRF middleware so per-route CsrfProtect dep isn't
     required when the FastAPI app already has CSRF enforced globally.
 
+    v1.3.0 S9 — also recognizes the constructor pattern:
+        app = FastAPI(middleware=[Middleware(CSRFMiddleware)])
+    Pre-v1.3.0 only matched `app.add_middleware(...)` calls (S-B4).
+
     Catches:
       app.add_middleware(CSRFMiddleware, ...)
       app.add_middleware(SomethingCsrfMiddleware, ...)
-      @app.middleware  decorator on a func whose body references csrf
+      app = FastAPI(middleware=[Middleware(CsrfMiddleware), ...])
       from fastapi_csrf_protect import CsrfProtect → assume init elsewhere
     """
     for node in ast.walk(tree):
+        # add_middleware call
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
@@ -165,6 +298,23 @@ def _module_has_csrf_middleware(tree: ast.AST) -> bool:
             )
             if "csrf" in name.lower():
                 return True
+        # FastAPI(middleware=[Middleware(CsrfMiddleware), ...]) constructor
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "FastAPI"
+        ):
+            for kw in node.keywords:
+                if kw.arg != "middleware":
+                    continue
+                if not isinstance(kw.value, ast.List):
+                    continue
+                for elt in kw.value.elts:
+                    for sub in ast.walk(elt):
+                        if isinstance(sub, ast.Name) and "csrf" in sub.id.lower():
+                            return True
+                        if isinstance(sub, ast.Attribute) and "csrf" in sub.attr.lower():
+                            return True
     return False
 
 
@@ -177,7 +327,16 @@ def _exempt(verb: str, path: str, exempt_list: list[str]) -> bool:
 
 
 def _scan_file(path: Path, virtual: str, policy: dict) -> int:
-    if not (virtual.startswith("backend/src/api/") or path.parent.name == "api"):
+    # v1.3.0 S10 — consume spine_paths "backend_api" so consumers can
+    # override the route-scan scope without forking the check.
+    api_roots = tuple(
+        p.relative_to(REPO_ROOT).as_posix() + "/"
+        for p in spine_paths("backend_api", ("backend/src/api",))
+    )
+    if not (
+        any(virtual.startswith(root) for root in api_roots)
+        or path.parent.name == "api"
+    ):
         return 0
     try:
         source = path.read_text(encoding="utf-8")
@@ -193,21 +352,26 @@ def _scan_file(path: Path, virtual: str, policy: dict) -> int:
     auth_dec_names = set(policy.get("auth_decorator_names") or [])
     rate_limit_exempt = list(policy.get("rate_limit_exempt") or [])
     csrf_exempt = list(policy.get("csrf_exempt") or [])
+    # v1.3.0 S8 — router_var_names policy-driven; default {router, app}.
+    router_vars = set(policy.get("router_var_names") or ["router", "app"])
+    # v1.3.0 S9 — csrf_dependency_names policy-driven; default {CsrfProtect}.
+    csrf_dep_names = set(policy.get("csrf_dependency_names") or ["CsrfProtect"])
     # If this module installs CSRF middleware globally, skip the per-route
     # CsrfProtect dependency check (the middleware enforces it for every route).
     has_global_csrf = _module_has_csrf_middleware(tree)
+    # v1.3.0 S10 — capture module-level Constant assignments so route
+    # decorators that reference path constants resolve them.
+    module_constants = _collect_module_constants(tree)
     errors = 0
 
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for dec in node.decorator_list:
-            info = _route_decorator_info(dec)
+            info = _route_decorator_info(dec, router_vars, module_constants)
             if info is None:
                 continue
             verb, route_path = info
-            if verb not in MUTATING_VERBS:
-                continue
             line = node.lineno
             if not _has_auth_dep(node, auth_dep_names, auth_dec_names):
                 first = sorted(auth_dep_names)[0] if auth_dep_names else "get_current_user"
@@ -223,7 +387,7 @@ def _scan_file(path: Path, virtual: str, policy: dict) -> int:
                     errors += 1
             if (
                 not has_global_csrf
-                and not _has_csrf_dep(node)
+                and not _has_csrf_dep(node, csrf_dep_names)
                 and not _exempt(verb, route_path, csrf_exempt)
             ):
                 if _emit(path, "Q13.route-needs-csrf",
