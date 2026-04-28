@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Consumer profile (Sprint 1 / S1.2)",
+  "description": "Declares which check pack(s) the consumer's harness install enables. Sprint 4 expands with `extends`/`disabled`/`overrides`/`locked_rules`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profile", "owner"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    },
+    "profile": {
+      "type": "string",
+      "enum": [
+        "python-only",
+        "python-react",
+        "node-only",
+        "node-react",
+        "node-nest",
+        "nextjs",
+        "react-only",
+        "vue",
+        "svelte",
+        "go-only",
+        "rust-only",
+        "polyglot",
+        "minimal"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Handle of the team / individual responsible for this install"
+    }
+  }
+}
