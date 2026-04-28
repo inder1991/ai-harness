@@ -1,5 +1,40 @@
 # Releases
 
+## v1.3.1 — README rewrite (signed; docs only — no behavior change)
+
+Documentation patch on top of v1.3.0. Rewrites `README.md` from a
+30-line bootstrap quickstart into a full-system explainer (~600 lines)
+covering:
+
+- **Why the harness exists** — the three problems with naive AI-assisted
+  development (no convention awareness, session amnesia, no
+  enforcement) and how each is fixed.
+- **End-to-end walkthrough** — concrete six-step trace from "open the
+  IDE" through "PR merges," with the H-16 emit format example.
+- **What's inside** — `.harness/` and `tools/` with per-file purpose
+  tables (12 representative checks, 6 representative generators, all
+  9 policy YAMLs).
+- **The $0-API-cost design** — five mechanisms (deterministic checks,
+  generators-not-prompts, free-CLI defer, failure-log telemetry,
+  no fix-loop agent).
+- **Context-window discipline** — six mechanisms (32 KB cap, priority
+  tiers, applies_to globs, JSON over prose, pointers not files,
+  deterministic regen).
+- **vs. CLAUDE.md** — six concrete differences with a mental-model
+  table.
+- **Bootstrap + upgrade flows** — exact command sequences.
+- **Self-invariants** — the H- and Q- rules the harness enforces on
+  itself.
+- **Contributing** — three small templates (add a check, add a
+  generator, add a policy YAML).
+
+Also bumps `HARNESS_CARD.yaml.version` 1.3.0 → 1.3.1 to keep
+parity with this release tag (Q21).
+
+No code changes, no schema changes, no fixture changes. Existing
+v1.3.0 consumers can adopt v1.3.1 with a pin bump and a `sync_harness`
+run; the gate behaves identically.
+
 ## v1.3.0 — Rule-semantics hardening (signed)
 
 Closes the 30 P3 findings from the post-v1.2.1 second-pass audit
