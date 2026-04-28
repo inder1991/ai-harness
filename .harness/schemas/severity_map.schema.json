@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Severity map (Sprint 0 / S0.2)",
+  "description": "Assigns a severity tier + why + fix_hint to every rule in the substrate. Used by harness check (Sprint 1 S1.3) for grouping, color, exit-code decisions, and explainer rendering.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "rules"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    },
+    "rules": {
+      "type": "object",
+      "patternProperties": {
+        "^(Q[0-9]+|H[0-9]+|NQ[0-9]+)\\.[A-Za-z][A-Za-z0-9_-]+$": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tier", "why", "fix_hint"],
+          "properties": {
+            "tier": {
+              "type": "string",
+              "enum": ["P0_security", "P1_correctness", "P2_quality", "P3_style"]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 10
+            },
+            "fix_hint": {
+              "type": "string",
+              "minLength": 5
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

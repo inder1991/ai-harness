@@ -4,10 +4,11 @@ name: harness-validate
 # and every push to main. Without this, pre-commit hooks are bypassable
 # (`git commit -n`); CI is the safety net.
 #
-# B8 (v1.1.1): the workflow previously ran `validate-fast`, which silently
-# skipped FULL_ONLY_CHECKS (output_format_conformance, backend_testing,
-# frontend_testing, backend_async_correctness, backend_db_layer) plus
-# typecheck_policy. CI now runs the full tier with a 20-min step budget.
+# Sprint 0 / S0.6 — cross-platform CI matrix. Runs on ubuntu + macOS,
+# Python 3.11/3.12/3.13. Catches Linux-only assumptions (line endings,
+# path separators, bash 3.2 quirks on macOS) at PR time, not at customer
+# report time. Windows is explicitly best-effort, NOT in the matrix —
+# see docs/SUPPORTED_PLATFORMS.md.
 #
 # Permissions are read-only; the workflow does not need any secrets.
 
@@ -22,8 +23,14 @@ permissions:
 jobs:
   validate:
     name: validate-full
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout (full history for diff-based checks)
@@ -31,16 +38,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install harness Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install pyyaml jsonschema
+          pip install pyyaml jsonschema pytest pytest-asyncio coverage hypothesis
 
       - name: Run validate-full (mandatory tier — H-17)
         run: |
@@ -51,12 +58,24 @@ jobs:
               python tools/run_validate.py --full
           fi
 
-      - name: Run harness self-tests (pytest)
+      - name: Run harness self-tests under coverage (Sprint 0 / S0.5)
+        env:
+          # Sprint 0 / S0.5 — subprocess coverage hook.
+          COVERAGE_PROCESS_START: ${{ github.workspace }}/pyproject.toml
+          PYTHONPATH: ${{ github.workspace }}
         run: |
-          pip install pytest
-          # Only the harness self-tests; consumer tests live elsewhere.
           if [ -d tests/harness ]; then
-              python -m pytest tests/harness -q --tb=short
+              coverage run --rcfile=pyproject.toml -m pytest tests/harness -q --tb=short --ignore=tests/harness/fixtures
+              coverage combine --rcfile=pyproject.toml || true
+              coverage report --rcfile=pyproject.toml
           else
               echo "[INFO] no tests/harness/ directory; skipping"
           fi
+
+      - name: Upload coverage report (informational)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: build/coverage/
+          if-no-files-found: ignore

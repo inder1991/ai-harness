@@ -1,0 +1,536 @@
+# Severity map for every rule in the substrate.
+#
+# Sprint 0 / S0.2 — defines the four severity tiers and assigns one to
+# every rule. Used by `harness check` (Sprint 1 S1.3) to:
+#   - group findings by severity (P0 → P1 → P2 → P3)
+#   - choose color (red / yellow / blue / dim)
+#   - decide pre-commit vs CI exit codes:
+#       human mode: exit 1 only on P0/P1 findings
+#       pre-commit mode: exit 1 on any finding (v1.x compat)
+#   - render the why/fix block per rule
+#
+# Adding a new check?
+#   1. Add an entry here for every rule ID it emits.
+#   2. The completeness self-test (`tests/harness/test_severity_map_completeness.py`)
+#      will fail if you don't.
+#
+# Tier definitions:
+#   P0_security    — security or compliance gap. Production-blocker.
+#   P1_correctness — code that will produce wrong results / break in prod.
+#   P2_quality     — maintainability / readability. Slows future work.
+#   P3_style       — pure stylistic preference. Habit shaping.
+
+schema_version: "1"
+
+rules:
+  # ──────────────────────────── H-rules (substrate self-tests) ─────
+  H16.output-format-violation:
+    tier: P1_correctness
+    why: |
+      A check's stdout doesn't match the canonical
+      `[SEVERITY] file=<path>:<line> rule=<id> message="..." suggestion="..."`
+      shape. The orchestrator parses these lines; a non-conforming
+      check silently breaks the gate.
+    fix_hint: 'use `_common.emit("ERROR", path, rule, message, suggestion, line=N)`'
+
+  H16.subprocess-error:
+    tier: P1_correctness
+    why: |
+      The check's subprocess errored unexpectedly (non-zero exit
+      unrelated to a real finding).
+    fix_hint: "run the check directly to triage the underlying error"
+
+  H21.policy-schema-missing:
+    tier: P1_correctness
+    why: "A policy YAML has no JSON Schema; typos won't be caught."
+    fix_hint: "add a matching `<name>.schema.json` under `.harness/schemas/`"
+
+  H21.policy-schema-violation:
+    tier: P1_correctness
+    why: "A policy YAML doesn't conform to its declared JSON Schema."
+    fix_hint: "fix the YAML to match the schema; check for typos in keys"
+
+  H21.rule-not-covered:
+    tier: P2_quality
+    why: |
+      A rule ID is referenced in plans/docs but no check emits it.
+      Either the check is missing or the plan is stale.
+    fix_hint: "implement the rule, OR add an exemption to .harness/rule_coverage_exemptions.yaml with a written reason"
+
+  H24.fixture-pairing-missing:
+    tier: P2_quality
+    why: "A check has no paired compliant/violation fixtures; we can't verify it works."
+    fix_hint: "add `tests/harness/fixtures/<check>/{compliant,violation}/` with at least one file each"
+
+  # ──────────────────────────── Q1 — frontend style ────────────────
+  Q1.classname-needs-cn:
+    tier: P2_quality
+    why: "Multiple Tailwind classes joined with `+` instead of the canonical `cn()` helper drift over time."
+    fix_hint: 'wrap with `cn(...)` from `@/lib/cn`'
+
+  Q1.no-css-in-js:
+    tier: P2_quality
+    why: "CSS-in-JS bypasses the Tailwind token system and produces inconsistent output."
+    fix_hint: "use Tailwind utility classes; if a token is missing, propose adding it"
+
+  Q1.no-extra-css-imports:
+    tier: P3_style
+    why: "Importing arbitrary CSS files balloons the bundle and bypasses the design system."
+    fix_hint: "remove the import; replicate the styles using Tailwind utilities"
+
+  Q1.no-inline-style-static:
+    tier: P3_style
+    why: "Static `style={{...}}` props bypass Tailwind and don't get tree-shaken."
+    fix_hint: "convert to className utilities; if dynamic, leave a comment explaining why"
+
+  # ──────────────────────────── Q2 — state management ──────────────
+  Q2.no-redux:
+    tier: P2_quality
+    why: "This project picked Zustand; Redux/Recoil/Jotai/MobX duplicate state primitives."
+    fix_hint: "remove the import; use Zustand or local state"
+
+  Q2.zustand-quarantine:
+    tier: P2_quality
+    why: "Zustand stores must live under `frontend/src/stores/` so state is colocated."
+    fix_hint: "move the store to `frontend/src/stores/<name>.ts`"
+
+  Q2.zustand-needs-justification:
+    tier: P2_quality
+    why: "A new Zustand slice needs a written reason; otherwise people keep adding stores indefinitely."
+    fix_hint: 'add a `// JUSTIFICATION: <why>` comment near `create(...)`'
+
+  # ──────────────────────────── Q3 — API access ────────────────────
+  Q3.no-axios:
+    tier: P2_quality
+    why: "This project uses native fetch via the API client wrapper; axios duplicates the surface."
+    fix_hint: "use the API client at `@/services/api/client`"
+
+  Q3.no-raw-fetch-in-ui:
+    tier: P2_quality
+    why: "Raw `fetch(...)` in components/pages/hooks bypasses error handling, headers, retries."
+    fix_hint: "route through the API client wrapper"
+
+  Q3.component-no-direct-services-api:
+    tier: P2_quality
+    why: "Only the API client (client.ts) should know about the API surface."
+    fix_hint: "import from `@/services/api/client`, not `@/services/api/<endpoint>`"
+
+  Q3.queryfn-must-use-apiclient:
+    tier: P2_quality
+    why: "useQuery/useMutation queryFn that calls fetch directly bypasses the API client wrapper."
+    fix_hint: "queryFn should call your typed API client method"
+
+  # ──────────────────────────── Q4 — UI primitives ─────────────────
+  Q4.no-bare-html-primitive:
+    tier: P3_style
+    why: "The design system's Button/Input/Select carry the project's standard accessibility + sizing."
+    fix_hint: "use the canonical primitive instead of the bare HTML tag"
+
+  Q4.no-third-party-ui-kit:
+    tier: P2_quality
+    why: "Mixing UI kits leads to inconsistent visuals and double-bundle weight."
+    fix_hint: "build the missing primitive in our design system instead"
+
+  Q4.no-wrapper-reexport:
+    tier: P3_style
+    why: "Re-exporting third-party UI components hides their origin from grep."
+    fix_hint: "import from the third-party package directly, OR fully wrap with new behavior"
+
+  Q4.primitive-no-business-logic:
+    tier: P2_quality
+    why: "A primitive should be pure presentation; business logic in primitives breaks reuse."
+    fix_hint: "lift the logic to the calling component; pass results down via props"
+
+  # ──────────────────────────── Q5 — frontend testing ──────────────
+  Q5.api-module-needs-test:
+    tier: P2_quality
+    why: "API modules drive the entire frontend; untested modules ship bugs to every consumer."
+    fix_hint: "add `<module>.test.ts` next to the source file"
+
+  Q5.hook-needs-test:
+    tier: P2_quality
+    why: "Hooks are reusable units; a bug in a hook hits every component that uses it."
+    fix_hint: "add `<hook>.test.ts` using @testing-library/react-hooks"
+
+  Q5.no-jest-or-mocha:
+    tier: P2_quality
+    why: "This project uses Vitest; jest/mocha duplicate the test surface."
+    fix_hint: "rewrite using vitest"
+
+  Q5.e2e-must-use-playwright:
+    tier: P3_style
+    why: "Cypress/Selenium fragmenting our e2e surface."
+    fix_hint: "rewrite using Playwright"
+
+  Q5.no-playwright-in-unit:
+    tier: P3_style
+    why: "Playwright in unit tests starts a browser; slow + flaky."
+    fix_hint: "use @testing-library for unit tests; reserve Playwright for e2e"
+
+  # ──────────────────────────── Q6 — routing ───────────────────────
+  Q6.single-route-table:
+    tier: P2_quality
+    why: "Multiple route tables fight each other; navigation breaks unpredictably."
+    fix_hint: "consolidate routes into `router.tsx`"
+
+  Q6.pages-must-be-lazy:
+    tier: P2_quality
+    why: "Sync page imports balloon the initial bundle."
+    fix_hint: "use `lazy(() => import('./page'))` in the route definition"
+
+  Q6.no-anchor-for-internal-nav:
+    tier: P3_style
+    why: "<a href='/internal'> does a full page reload, losing client-side state."
+    fix_hint: "use <Link to='/internal'> from react-router"
+
+  Q6.useNavigate-not-at-top-level:
+    tier: P1_correctness
+    why: "Hooks at module top-level violate React's Rules of Hooks; runtime crash."
+    fix_hint: "move `useNavigate()` into a component body"
+
+  # ──────────────────────────── Q7 — async correctness ─────────────
+  Q7.no-requests:
+    tier: P1_correctness
+    why: "`requests` is sync; calling it from `async def` freezes the event loop."
+    fix_hint: "use `httpx.AsyncClient` (see `backend/src/utils/http.py`)"
+
+  Q7.no-aiohttp:
+    tier: P2_quality
+    why: "This project uses httpx; aiohttp duplicates the async client surface."
+    fix_hint: "use `httpx.AsyncClient`"
+
+  Q7.no-asyncio-run-in-handler:
+    tier: P1_correctness
+    why: "FastAPI already runs an event loop; nested `asyncio.run()` crashes."
+    fix_hint: "make the handler `async def`; await directly"
+
+  Q7.no-sync-httpx:
+    tier: P1_correctness
+    why: "`httpx.Client()` is sync; freezes the event loop in async code."
+    fix_hint: "use `httpx.AsyncClient()` inside `async with`"
+
+  Q7.no-blocking-sleep-in-async:
+    tier: P1_correctness
+    why: "`time.sleep()` inside `async def` blocks the event loop for every other request."
+    fix_hint: "use `await asyncio.sleep(...)` or `await asyncio.to_thread(time.sleep, ...)`"
+
+  # ──────────────────────────── Q8 — DB layer ──────────────────────
+  Q8.sqlmodel-quarantine:
+    tier: P1_correctness
+    why: "SQLModel outside `storage/` or `models/db/` couples the rest of the codebase to the ORM."
+    fix_hint: "move ORM access behind a StorageGateway method"
+
+  Q8.asyncsession-quarantine:
+    tier: P1_correctness
+    why: "AsyncSession outside `storage/` lets non-storage code hold a live DB session."
+    fix_hint: "let StorageGateway own the session; non-storage code calls gateway methods"
+
+  Q8.execute-quarantine:
+    tier: P1_correctness
+    why: "Direct `cursor.execute(...)` outside `storage/` bypasses the ORM safety + StorageGateway abstraction."
+    fix_hint: "add a method to StorageGateway and call that"
+
+  Q8.text-call-outside-analytics:
+    tier: P1_correctness
+    why: "Raw SQL `text(...)` outside `storage/analytics.py` scatters hand-written queries."
+    fix_hint: "route through `storage/analytics.py` with a `# RAW-SQL-JUSTIFIED:` comment"
+
+  Q8.api-model-no-table:
+    tier: P1_correctness
+    why: "API/agent boundary models declared `table=True` leak DB persistence into response shapes."
+    fix_hint: "split DB persistence into `models/db/`; keep boundary models pure pydantic"
+
+  Q8.db-model-needs-table:
+    tier: P2_quality
+    why: "A file under `models/db/` that doesn't declare any `table=True` class is in the wrong directory."
+    fix_hint: "add `table=True` (or inherit from a known DB base), OR move the file"
+
+  Q8.raw-sql-unjustified:
+    tier: P2_quality
+    why: "Raw SQL string outside `storage/analytics.py` without a `# RAW-SQL-JUSTIFIED:` comment is hand-written SQL nobody documented."
+    fix_hint: "move to analytics.py with `# RAW-SQL-JUSTIFIED: <reason>` on the same/preceding line"
+
+  # ──────────────────────────── Q9 — backend testing ───────────────
+  Q9.learning-needs-hypothesis:
+    tier: P2_quality
+    why: "Learning/parsing code has wide input space; property-based testing catches the edge cases unit tests miss."
+    fix_hint: "add a hypothesis test under `backend/tests/learning/test_<name>.py`"
+
+  Q9.parser-needs-hypothesis:
+    tier: P2_quality
+    why: "Parsers are exactly what hypothesis tests for; pure data-transform with infinite input space."
+    fix_hint: "add a hypothesis test under `backend/tests/<path>/test_<name>.py`"
+
+  Q9.extractor-needs-hypothesis:
+    tier: P2_quality
+    why: "Functions named `extract_*/parse_*/resolve_*/calibrate_*/score_*` are typically pure transforms."
+    fix_hint: "add a hypothesis test referencing the function name"
+
+  Q9.no-live-llm:
+    tier: P1_correctness
+    why: "Test-time LLM calls are slow, costly, non-deterministic, and break offline test runs."
+    fix_hint: "use a fake/mock at the boundary; never `import openai` or `import anthropic` in test files"
+
+  Q9.no-live-otlp-exporter:
+    tier: P1_correctness
+    why: "Live OTLP exporter starts a network connection during test runs; flaky + slow."
+    fix_hint: "mock the exporter at module level"
+
+  Q9.test-raw-sql-justification-banned:
+    tier: P2_quality
+    why: "`RAW-SQL-JUSTIFIED:` is for production justification only; tests should set up data via the gateway."
+    fix_hint: "use the gateway test helpers"
+
+  # ──────────────────────────── Q10 — boundary contracts ───────────
+  Q10.api-request-needs-forbid:
+    tier: P0_security
+    why: |
+      Without `extra="forbid"`, request models silently accept arbitrary
+      fields. Many security incidents start with "I never realized the
+      client could send that field."
+    fix_hint: 'add `model_config = ConfigDict(extra="forbid")` to the model'
+
+  Q10.api-response-needs-frozen:
+    tier: P1_correctness
+    why: "Mutable response shapes can be modified after construction, surprising downstream code."
+    fix_hint: 'add `model_config = ConfigDict(frozen=True)` to the model'
+
+  Q10.agent-needs-forbid-and-frozen:
+    tier: P0_security
+    why: "Agent (LLM-touching) models are the highest-risk surface; double-strict mandatory."
+    fix_hint: 'add both `extra="forbid"` AND `frozen=True`'
+
+  Q10.probability-needs-bounds:
+    tier: P1_correctness
+    why: |
+      Fields named `confidence`/`probability`/`*_score`/`*_ratio` imply
+      a 0-1 number. Without bounds, an LLM can hand back 1.5 and your
+      downstream math goes weird.
+    fix_hint: "add `ge=0, le=1` constraints to the Field"
+
+  Q10.no-extra-allow-in-boundary:
+    tier: P0_security
+    why: "`extra='allow'` is the opposite of forbid — explicitly allows unknown fields."
+    fix_hint: 'change to `extra="forbid"`; lift the loose schema to an internal-only model'
+
+  # ──────────────────────────── Q11 — dependencies ─────────────────
+  Q11.python-unlisted:
+    tier: P1_correctness
+    why: "Every dep is supply-chain risk; you should consciously decide before adding one."
+    fix_hint: "add the dep to `python.allowed` in dependencies.yaml (with an ADR)"
+
+  Q11.npm-unlisted:
+    tier: P1_correctness
+    why: "Same as above for npm."
+    fix_hint: "add to `npm.runtime_allowed` or `npm.dev_allowed` (with an ADR)"
+
+  Q11.spine-import-unlisted:
+    tier: P1_correctness
+    why: "Even if a dep is allowed in pyproject, you don't want it bleeding into core code without intent."
+    fix_hint: "add to `python.allowed_on_spine` in dependencies.yaml"
+
+  Q11.blacklisted:
+    tier: P0_security
+    why: "Known-bad packages (deprecated, malicious, abandoned) explicitly banned."
+    fix_hint: "remove the dep; pick an alternative"
+
+  # ──────────────────────────── Q12 — performance budgets ──────────
+  Q12.agent-cost-hint-required:
+    tier: P1_correctness
+    why: "An agent without a budget can run away (token explosion, infinite tool loops)."
+    fix_hint: "add `cost_hint: { tool_calls_max, tokens_max, wall_clock_max_ms }` to the agent contract YAML"
+
+  Q12.agent-budget-exceeded:
+    tier: P1_correctness
+    why: "Budgets exist to be enforced, not just declared."
+    fix_hint: "reduce the cost_hint value, OR raise the cap in performance_budgets.yaml with an ADR"
+
+  Q12.gateway-needs-timed-query:
+    tier: P2_quality
+    why: "You can't fix what you can't measure; every DB call should report wall time."
+    fix_hint: 'add `@timed_query("<name>")` decorator to the gateway method'
+
+  # ──────────────────────────── Q13 — security ─────────────────────
+  Q13.secret-detected:
+    tier: P0_security
+    why: "Hardcoded credentials in source — gitleaks fired."
+    fix_hint: "rotate the secret AND remove it from git history before merge"
+
+  Q13.dangerous-pattern:
+    tier: P0_security
+    why: "eval/exec/os.system/shell=True/etc. — common RCE vector."
+    fix_hint: "rewrite to a safe alternative; never execute untrusted strings"
+
+  Q13.tls-verify-required:
+    tier: P0_security
+    why: "verify=False / unverified context / urllib3.disable_warnings disable TLS validation."
+    fix_hint: "remove the bypass; fix the underlying TLS error"
+
+  Q13.outbound-timeout-required:
+    tier: P1_correctness
+    why: "httpx with timeout=None waits forever; one slow upstream blocks every worker."
+    fix_hint: "set an explicit timeout, OR use the with_retry wrapper"
+
+  Q13.log-secret-leak:
+    tier: P0_security
+    why: "Logger call may emit Authorization/password/token to log files."
+    fix_hint: "wrap the value in `redact_secret(...)` or omit it entirely"
+
+  Q13.route-needs-auth:
+    tier: P0_security
+    why: "Mutating route without an auth dependency — #1 cause of data leaks."
+    fix_hint: "add `user: Annotated[User, Depends(get_current_user)]` to the handler signature"
+
+  Q13.route-needs-rate-limit:
+    tier: P0_security
+    why: "Mutating route without rate limit is a brute-force / credential-stuffing target."
+    fix_hint: 'add `@limiter.limit("<n>/minute")` or list in security_policy.yaml.rate_limit_exempt'
+
+  Q13.route-needs-csrf:
+    tier: P0_security
+    why: "Mutating route without CSRF protection allows browser-based forgery."
+    fix_hint: "add `csrf_protect: CsrfProtect = Depends()` or list in csrf_exempt"
+
+  # ──────────────────────────── Q14 — accessibility ────────────────
+  Q14.img-needs-alt:
+    tier: P1_correctness
+    why: "Screen readers cannot describe an image without alt text."
+    fix_hint: 'add `alt="<description>"` (or `alt=""` for purely decorative)'
+
+  Q14.button-needs-accessible-name:
+    tier: P1_correctness
+    why: "A button without text or aria-label is invisible to screen readers."
+    fix_hint: 'add visible text content or `aria-label="..."`'
+
+  Q14.no-positive-tabindex:
+    tier: P2_quality
+    why: "Positive tabindex breaks keyboard navigation order."
+    fix_hint: "use `tabindex='0'` (in source order) or `'-1'` (programmatic only)"
+
+  Q14.primitive-needs-axe-test:
+    tier: P2_quality
+    why: "Design-system primitives need an axe-core test to enforce a11y at the component level."
+    fix_hint: "add an `axe.run()` assertion in the primitive's test file"
+
+  # ──────────────────────────── Q15 — documentation ────────────────
+  Q15.spine-docstring-required:
+    tier: P2_quality
+    why: "Spine code is read + extended frequently; undocumented contracts get re-derived (badly) by future readers."
+    fix_hint: "add a one-line docstring describing purpose + return contract"
+
+  Q15.frontend-jsdoc-required:
+    tier: P2_quality
+    why: "Frontend public-API surface (hooks, lib, services) needs JSDoc for IDE hover docs + IntelliSense."
+    fix_hint: "add a `/** ... */` comment immediately above the export declaration"
+
+  Q15.adr-required-on-change:
+    tier: P2_quality
+    why: "Substrate / policy changes are decisions; future maintainers need the reasoning."
+    fix_hint: "add `docs/decisions/<YYYY-MM-DD>-<slug>.md` based on _TEMPLATE.md"
+
+  # ──────────────────────────── Q16 — logging ──────────────────────
+  Q16.no-print-in-spine:
+    tier: P2_quality
+    why: "print() doesn't go to the structured log pipeline; in production it's invisible."
+    fix_hint: "replace `print(...)` with `log.info(...)` or similar"
+
+  Q16.bare-except-no-log:
+    tier: P1_correctness
+    why: "Silent exception swallowing is the #1 way bugs get hidden for months."
+    fix_hint: "log the exception (`log.exception(...)`) or narrow the except"
+
+  Q16.f-string-in-log:
+    tier: P3_style
+    why: "f-strings format eagerly even when the log level is off; %-style lets handlers skip work."
+    fix_hint: '`log.info("msg %s", value)` instead of `log.info(f"msg {value}")`'
+
+  Q16.secret-shaped-log-literal:
+    tier: P0_security
+    why: "String literal in log call contains a secret-shaped pattern."
+    fix_hint: "redact via redact_secret(...) or omit the secret token entirely"
+
+  # ──────────────────────────── Q17 — error handling ───────────────
+  Q17.no-pass-in-except:
+    tier: P1_correctness
+    why: "`except: pass` silently swallows the error. Even narrow excepts must do something."
+    fix_hint: "log, re-raise, or convert to a specific return value with intent"
+
+  Q17.reraise-without-from:
+    tier: P2_quality
+    why: "Raising a new exception inside `except as exc:` without `from exc` discards the cause chain."
+    fix_hint: "use `raise NewError(...) from exc`"
+
+  Q17.generic-exception-raised:
+    tier: P2_quality
+    why: "`raise Exception(...)` / BaseException are too broad; callers can't distinguish."
+    fix_hint: "raise a specific subclass (define one if needed)"
+
+  Q17.http-exception-needs-detail:
+    tier: P2_quality
+    why: "HTTPException without `detail=` returns a generic empty body to the client."
+    fix_hint: 'add `detail="..."` describing the failure for the client'
+
+  # ──────────────────────────── Q18 — conventions ──────────────────
+  Q18.python-snake-case:
+    tier: P3_style
+    why: "PEP 8: Python module names are lower_snake_case."
+    fix_hint: "rename the file to lower_snake_case"
+
+  Q18.frontend-component-pascal-case:
+    tier: P3_style
+    why: "Convention: React component files are PascalCase."
+    fix_hint: "rename to PascalCase.tsx (or PascalCase.test.tsx for test files)"
+
+  Q18.frontend-hook-camel-case:
+    tier: P3_style
+    why: "React's Rules of Hooks: hook names start with `use` + camelCase."
+    fix_hint: "rename to `useFooBar.ts`"
+
+  Q18.no-relative-import-backend:
+    tier: P3_style
+    why: "Relative imports break refactors; absolute imports survive moves."
+    fix_hint: "use `from src.<module> import ...`"
+
+  Q18.no-dotdot-import-frontend:
+    tier: P3_style
+    why: "`../..` imports are brittle; `@/` alias survives reorganization."
+    fix_hint: "use `import x from '@/path/to/module'`"
+
+  Q18.no-default-export-in-components:
+    tier: P3_style
+    why: "Named exports rename consistently across IDE; defaults get auto-named differently in every consumer."
+    fix_hint: "use `export const Foo = ...` instead of `export default Foo`"
+
+  # ──────────────────────────── Q19 — typecheck ────────────────────
+  Q19.new-typecheck-finding:
+    tier: P1_correctness
+    why: "mypy/tsc reports a finding NOT in the baseline. New type errors aren't allowed; existing ones are grandfathered."
+    fix_hint: "fix the type error; if intentional + justified, add to the baseline with an ADR"
+
+  Q19.baseline-schema-violation:
+    tier: P1_correctness
+    why: "The baseline file is malformed; the gate doesn't know which findings are grandfathered."
+    fix_hint: "regenerate via `tools/generate_typecheck_baseline.py`"
+
+  Q19.baseline-grew-without-adr:
+    tier: P1_correctness
+    why: "Widening the baseline is a real decision; document it."
+    fix_hint: "add an ADR explaining why the new findings can't be fixed now"
+
+  Q19.upstream-tool-missing:
+    tier: P2_quality
+    why: "mypy/tsc binary not on PATH; the gate degraded silently to a no-op."
+    fix_hint: "install the missing tool"
+
+  # ──────────────────────────── Q21 / Q22 — substrate self-tests ───
+  Q21.harness-card-version-mismatch:
+    tier: P1_correctness
+    why: |
+      `HARNESS_CARD.yaml.version` doesn't match `.harness-version`. Drift
+      means consumers see a stale "what does this harness cover?" manifest.
+    fix_hint: "bump both atomically in the same commit"
+
+  Q22.doc-rule-count-mismatch:
+    tier: P2_quality
+    why: "A check's docstring claims N rules but enumerates a different count. Drift over time confuses contributors."
+    fix_hint: "update the docstring count or add the missing rule enumeration"

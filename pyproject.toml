@@ -1,0 +1,99 @@
+# Sprint 0 / S0.5 — coverage tooling.
+#
+# Why this file exists in the source repo:
+#   - Configures coverage.py for the ≥95% gate.
+#   - Will host [project.scripts] for the `harness` CLI in Sprint 1 (S1.1).
+#   - Currently NOT a published Python package; consumers don't install
+#     ai-harness via pip. The substrate is consumed via `tools/sync_harness.py`
+#     which overlays files. This pyproject is for development tooling only.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-harness"
+version = "1.3.1"
+description = "Repo-level scaffolding that makes AI-assisted development productive in any codebase."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+  {name = "ai-harness maintainers"}
+]
+dependencies = [
+  "pyyaml>=6",
+  "jsonschema>=4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+  "coverage>=7",
+  "diff-cover>=8",
+  "hypothesis>=6",
+]
+
+# Coverage config.
+# Sprint 0 / S0.5 — ≥95% line + branch coverage on tools/ and .harness/checks/.
+# Sprint 0 baseline establishes the gate; later sprints don't regress.
+[tool.coverage.run]
+branch = true
+parallel = true
+concurrency = ["multiprocessing"]
+source = [
+  "tools",
+  ".harness/checks",
+  ".harness/generators",
+]
+omit = [
+  "*/__pycache__/*",
+  "*/tests/*",
+  "*/.venv/*",
+  "tools/extraction/*",  # one-shot scripts; not maintained code
+  "tools/perf/*",        # benchmarks; not enforced
+  "tools/maintenance/*", # one-off audit scripts
+  "sitecustomize.py",    # the coverage hook itself
+]
+
+[tool.coverage.report]
+# Sprint 0 / S0.5: tooling in place; gate ratcheted from a measured
+# baseline. The 95% target lives in CONTRIBUTING.md. Sprints 1-3 are
+# expected to ratchet this up as new code is added with paired tests
+# and as existing checks gain direct (not subprocess-only) tests.
+# Don't drop fail_under without an ADR.
+fail_under = 65
+ignore_errors = true
+precision = 1
+show_missing = true
+skip_covered = false
+exclude_lines = [
+  # Standard pragma
+  "pragma: no cover",
+  # Defensive imports — failure path tested at the wrapper level
+  "raise ImportError",
+  # Type-checking-only branches
+  "if TYPE_CHECKING:",
+  # __main__ entrypoints
+  "if __name__ == .__main__.:",
+  # Abstract methods
+  "raise NotImplementedError",
+]
+
+[tool.coverage.html]
+directory = "build/coverage"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/harness"]
+addopts = [
+  "--strict-markers",
+  "-q",
+]
+markers = [
+  "regression: permanent regression test for a closed audit finding (Sprint 0 S0.4)",
+  "slow: takes >10s; skip with `-m 'not slow'`",
+  "property: hypothesis property-based test",
+]
+# Filter out the fixtures dir — those are inputs to checks, not tests.
+norecursedirs = ["fixtures"]

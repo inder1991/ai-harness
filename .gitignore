@@ -1,0 +1,30 @@
+# Python bytecode + caches
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Coverage artifacts (Sprint 0 / S0.5)
+.coverage
+.coverage.*
+build/coverage/
+
+# Harness runtime state — gitignored per-machine
+.harness/.failure-log.jsonl
+.harness/.failure-log.jsonl.*
+.harness/.trace.jsonl
+.harness/.trace.jsonl.*
+
+# Generated inventories — produced by `make harness`, NOT checked in.
+# Note: `.harness/generated/README.md` IS checked in (it's the placeholder).
+.harness/generated/*.json
+
+# Local virtualenvs
+.venv/
+venv/
+
+# Editor + OS
+.DS_Store
+.idea/
+.vscode/
