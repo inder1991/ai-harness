@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Q13.A — security policy: secrets + outbound HTTP + dangerous patterns.
 
-Six rules:
+Five rules:
   Q13.secret-detected           — gitleaks CLI fired (re-emitted shape).
   Q13.dangerous-pattern         — eval/exec/os.system/shell=True/pickle.loads/
                                    yaml.load (no Loader)/__import__ + JS-side
@@ -14,8 +14,10 @@ Six rules:
   Q13.log-secret-leak           — logger call sees a value containing
                                    `Authorization: Bearer …` / `password=` etc.
                                    without going through a redact_* helper.
-  Q13.secret-shaped-literal     — base64/secret-shaped string literal outside
-                                   tests/ (WARN; gitleaks is the hard gate).
+
+(Pre-v1.3.0 a sixth secret-shaped-literal rule was claimed in this
+docstring but never implemented — closed in v1.3.0 S6 by removing
+the false claim. Audit ID: S-A9.)
 
 H-25:
   Missing input    — exit 2; rule=harness.target-missing.
