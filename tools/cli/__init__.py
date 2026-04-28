@@ -15,6 +15,9 @@ def dispatch(verb: str, argv: list[str]) -> int:
     if verb == "init":
         from tools.cli import init as _init
         handlers["init"] = _init.main
+    if verb == "check":
+        from tools.cli import check as _check
+        handlers["check"] = _check.main
     if verb in handlers:
         return handlers[verb](argv)
     raise RuntimeError(f"verb {verb!r} not registered")
