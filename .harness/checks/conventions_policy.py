@@ -39,8 +39,15 @@ BASELINE = load_baseline("conventions_policy")
 SNAKE_CASE_RE = re.compile(r'^[a-z_][a-z0-9_]*$')
 PASCAL_CASE_RE = re.compile(r'^[A-Z][A-Za-z0-9]*$')
 HOOK_NAME_RE = re.compile(r'^use[A-Z][A-Za-z0-9]*$')
-RELATIVE_IMPORT_RE = re.compile(r'^\s*from\s+\.+', re.MULTILINE)
-DOTDOT_IMPORT_RE = re.compile(r'''^\s*import\s+[^;]*?\bfrom\s+["']\.\.?/[^"']*["']''', re.MULTILINE)
+# v1.3.0 S17 (S-CV2) — pre-v1.3.0 fired on `from . import x` (single-
+# dot bare imports common in __init__.py re-exports). Now requires
+# either two+ leading dots (`from ..foo`) OR `.<word>` (`from .foo`).
+# `from . import x` is allowed.
+RELATIVE_IMPORT_RE = re.compile(r'^\s*from\s+(\.{2,}|\.\w)', re.MULTILINE)
+# v1.3.0 S17 (S-CV1) — pre-v1.3.0 used `\.\.?/` which matched both
+# `./relative` (single dot) AND `../parent` (double dot). The rule
+# only bans `../..` style. Tightened to require `../`.
+DOTDOT_IMPORT_RE = re.compile(r'''^\s*import\s+[^;]*?\bfrom\s+["']\.\./[^"']*["']''', re.MULTILINE)
 DEFAULT_EXPORT_RE = re.compile(r'^\s*export\s+default\b', re.MULTILINE)
 
 
@@ -65,10 +72,15 @@ def _scan_naming(path: Path, virtual: str) -> int:
                      f"rename to {re.sub(r'[^a-zA-Z0-9_]+', '_', vstem).lower()}.py"):
                 errors += 1
     if virtual.startswith("frontend/src/components/") and vname.endswith(".tsx"):
-        if not PASCAL_CASE_RE.match(vstem):
+        # v1.3.0 S17 (S-CV3) — strip secondary `.<modifier>` suffixes
+        # before applying PascalCase. Files like `Component.test.tsx`,
+        # `Component.stories.tsx`, `Component.types.ts` now check the
+        # first dot-segment only.
+        first_segment = vstem.split(".", 1)[0]
+        if not PASCAL_CASE_RE.match(first_segment):
             if _emit(path, "Q18.frontend-component-pascal-case",
                      f"component file `{vname}` is not PascalCase",
-                     f"rename to {vstem[:1].upper()}{vstem[1:]}.tsx"):
+                     f"rename to {first_segment[:1].upper()}{first_segment[1:]}.tsx"):
                 errors += 1
     if virtual.startswith("frontend/src/hooks/") and (vname.endswith(".ts") or vname.endswith(".tsx")):
         if not HOOK_NAME_RE.match(vstem):

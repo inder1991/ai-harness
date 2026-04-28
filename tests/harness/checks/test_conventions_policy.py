@@ -42,6 +42,12 @@ def test_violation_fires(fixture_name: str, expected_rule: str, pretend_path: st
         ("snake_case_module.py", "backend/src/services/clean_module.py"),
         ("PascalCaseComponent.tsx", "frontend/src/components/CleanComponent.tsx"),
         ("named_exports.tsx", "frontend/src/components/Bar.tsx"),
+        # v1.3.0 S17 (S-CV2) — single-dot bare imports are allowed.
+        ("single_dot_relative_init.py", "backend/src/services/__init__.py"),
+        # v1.3.0 S17 (S-CV3) — multi-dot stems like `Component.test.tsx`.
+        ("MyComponent.test.tsx", "frontend/src/components/MyComponent.test.tsx"),
+        # v1.3.0 S17 (S-CV1) — `./relative` (single dot) is allowed.
+        ("single_dot_dotdot_import.tsx", "frontend/src/components/Foo.tsx"),
     ],
 )
 def test_compliant_silent(fixture_name: str, pretend_path: str) -> None:
