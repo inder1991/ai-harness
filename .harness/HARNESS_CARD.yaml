@@ -9,7 +9,7 @@
 # Bump `version` in the same commit as `.harness-version` on every release.
 
 name: ai-harness
-version: 2.1.0
+version: 2.2.0
 upstream: https://github.com/inder1991/ai-harness
 license: MIT
 maintainers:
@@ -17,7 +17,7 @@ maintainers:
 
 # CAR axes — what slice of the harness layer this implements.
 control:
-  static_checks: 29
+  static_checks: 43  # 29 (Python+React+cross-cutting) + 8 (node-backend) + 3 (go) + 3 (rust)
   enforcement_layers:
     - pre-commit hook (tools/install_pre_commit.sh)
     - CI workflow (.github/workflows/validate.yml)

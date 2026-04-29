@@ -13,7 +13,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-harness"
-version = "1.3.1"
+version = "2.2.0"
 description = "Repo-level scaffolding that makes AI-assisted development productive in any codebase."
 readme = "README.md"
 requires-python = ">=3.11"

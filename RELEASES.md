@@ -1,5 +1,58 @@
 # Releases
 
+## v2.2.0 — Polyglot (signed)
+
+Sprint 4 of the v2.0 line. The harness becomes a real polyglot tool:
+Node, Go, and Rust go from "substrate-only" to first-class checks.
+
+**Profile composition** (`.harness/profiles/*.yaml`). A profile YAML
+can `extends:` a list of packs; cycles raise `ProfileError`. Consumer
+`.harness/profile.yaml` typically just sets `profile: <name>` and
+`extends: [<name>]` — the composite expands the rest. 7 composites
+ship: `python-react`, `python-only`, `node-only`, `node-react`,
+`react-only`, `go-only`, `rust-only`, `minimal`. Backward compatible:
+profiles without `extends` keep v1.x flat-layout behavior.
+
+**node-backend pack — 8 first-class checks** for JS/TS spines:
+
+| Rule prefix | Check |
+|-------------|-------|
+| NQ7         | direct `axios` import outside HTTP wrapper; `execSync` in async |
+| NQ8         | `prisma.$queryRaw` outside `db/analytics.ts`; `fs.readFileSync` outside `storage/` |
+| NQ9         | live LLM imports in tests; raw `fetch()` in tests |
+| NQ10        | request schemas missing `.strict()`; response schemas missing `.readonly()` |
+| NQ11        | dev packages in `dependencies`; runtime packages only in `devDependencies` |
+| NQ13        | `app.post/put/delete/patch` with no auth/csrf/rate-limit middleware |
+| NQ16        | template literals in `logger.info(...)`; `console.log` in spine |
+
+Implemented via tree-sitter Python bindings (S0.1 ADR:
+`docs/decisions/2026-04-29-node-ast-parser.md`). Lazy-imported and
+gated behind a new `[node]` pip extra — pure Python+React consumers
+never pay the ~30 MB install cost.
+
+**go-backend + rust-backend starter packs** — 3 checks each, regex-based:
+`<lang>_http_wrapper` (GQ7/RQ7), `<lang>_db_quarantine` (GQ8/RQ8),
+`<lang>_error_handling` (GQ12/RQ12). README stack-fit table:
+Go-only / Rust-only: ⚠ Partial (was 🟡 Substrate-only).
+
+**`harness init` Node detection** — auto-installs the node-backend pack
+when `package.json` is detected. Writes `extends: [<composite>]` and
+copies `.harness/profiles/` into the consumer install. 7 scenario
+tests: node-only, node-react, node+vue, monorepo, polyglot, profile
+copy completeness, end-to-end resolve_profile.
+
+**v1.x → v2.x migration** (`harness upgrade --from v1.x --to v2.x
+--migrate-only`). 4 ordered steps: copy profiles dir, add extends,
+bump HARNESS_CARD, migrate absolute-path baselines. Snapshots
+`.harness/` to `.harness.pre-upgrade/` before applying; restores on
+any failure. `harness doctor --check-upgrade` reports pending steps.
+Tested on v1.0.4 / v1.2.1 / v1.3.1 fixture snapshots. See
+`docs/UPGRADE.md`.
+
+**Test surface:** 602 → 674 (+72 across S4.1–S4.5).
+
+Cut as `v2.2.0` signed annotated tag.
+
 ## v2.1.0 — Reliability + observability (signed)
 
 Sprint 3 of the v2.0 line. Adds the gates that keep v2.x reliable as
