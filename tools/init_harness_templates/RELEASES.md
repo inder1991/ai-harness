@@ -1,5 +1,67 @@
 # Releases
 
+## v2.0.0 — DX redesign GA (signed)
+
+The full v2.0 line is here. **Sprint 0 (foundations) + Sprint 1 (CLI +
+humane output) + Sprint 2 (onboarding + auto-fixers) all shipped.**
+Sprints 3-6 (reliability, polyglot, multi-repo, compliance) follow as
+v2.1, v2.2, v2.3, v2.4 respectively.
+
+What's new in v2.0 vs v1.3.1:
+
+**The `harness` CLI.** Single user-facing surface with 9 verbs:
+init / check / fix / rules / baseline / telemetry / doctor / upgrade
+/ rollback. Color-aware (NO_COLOR + isatty + --no-color). Unknown
+commands suggest the nearest match. Exit codes documented in
+docs/EXIT_CODES.md.
+
+**`harness check` with humane output.** Severity-grouped (P0_security
+→ P1_correctness → P2_quality → P3_style), why/fix/more per rule,
+collapsed counts, 4 modes (human/json/raw/pre-commit). v1.x raw +
+pre-commit modes preserved exactly.
+
+**`harness fix` for 4 deterministic auto-fixers.** Q15 (docstring
+stub), Q16 (f-string → %-style), Q18 (default → named export), Q22
+(rule count update). 5-point safety contract: diff-required, AST
+guard, race guard, determinism guard, cascade re-check.
+
+**First-commit welcome banner.** One-time celebration + pointers to
+`harness rules` / `harness telemetry` / `harness rules explain <id>`.
+
+**Onboarding session-start status line.** Claude Code sessions in
+harness-equipped repos see `[ai-harness vX active] N rules loaded ·
+last check: M ago · top firing: <rule>` at the top of context.
+
+**Stack auto-detection.** `harness init` detects Python /
+Python+React / Node / Node+React / Nest / Next.js / Vue / Svelte /
+Go / Rust / polyglot from manifest files. 17-fixture test corpus.
+
+**Atomic install.** No partial state if `harness init` is interrupted.
+
+**Pre-commit hook collision handling.** Existing husky/pre-commit
+framework hooks are preserved with a [WARN]; harness doesn't
+silently overwrite.
+
+**Severity map covering all 95 rules** (.harness/severity_map.yaml,
+schema-validated).
+
+**65-test permanent regression suite** for every closed audit finding
+(B1-B27 + S-A* through S-DP*). Tests in `tests/harness/regression/`
+are never deleted.
+
+**Cross-platform CI matrix** — ubuntu-latest + macos-latest × Python
+3.11/3.12/3.13.
+
+**Coverage tooling** — pyproject.toml + sitecustomize.py for
+subprocess-aware coverage. Baseline 65%; 95% target by v2.1.
+
+**Test surface:** 301 (v1.3.1) → **593 passed / 1 skipped** (+292).
+
+Upgrade path from v1.3.1: `harness upgrade --trust-key
+73A7AF8F04F40EC9`. Backward-compatible substrate format. The pre-
+commit hook calls `harness check --mode=pre-commit` which preserves
+v1.x exit-1-on-any-finding behavior.
+
 ## v2.0.0-rc1 — Sprint 1 complete (release candidate; not for production)
 
 The first release candidate of the v2.0 line. **Sprint 1 is fully landed**;
