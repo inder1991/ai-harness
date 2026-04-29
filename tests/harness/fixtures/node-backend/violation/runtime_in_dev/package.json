@@ -1,0 +1,10 @@
+{
+  "name": "runtime-in-dev",
+  "dependencies": {
+    "express": "4.18.0"
+  },
+  "devDependencies": {
+    "zod": "3.22.0",
+    "@types/node": "20.0.0"
+  }
+}

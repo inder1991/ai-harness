@@ -34,6 +34,15 @@ dev = [
   "diff-cover>=8",
   "hypothesis>=6",
 ]
+# Sprint 4 / S4.2 — node-backend pack opt-in extras.
+# Per the S0.1 ADR, JS/TS parsing is via tree-sitter Python bindings.
+# Lazy-imported so consumers without the node-backend pack don't pay
+# the ~30 MB install cost. Pinned to 0.23.* per the ADR.
+node = [
+  "tree-sitter==0.23.*",
+  "tree-sitter-javascript==0.23.*",
+  "tree-sitter-typescript==0.23.*",
+]
 
 # Sprint 1 / S1.1 — `harness` CLI binary.
 # After `pip install -e .`, the user gets a `harness` command on PATH.
