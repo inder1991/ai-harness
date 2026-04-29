@@ -112,14 +112,47 @@ def _check_path_tools(target: Path) -> list[tuple[bool, str]]:
     return out
 
 
+def _check_upgrade_pending(target: Path) -> int:
+    """Sprint 4 / S4.5 — `harness doctor --check-upgrade` mode.
+
+    Surfaces pre-migration state: missing .harness/profiles/, no `extends:`
+    in profile.yaml, card/pin mismatch, foreign-machine baselines.
+    Returns 0 when on v2 layout, 1 when migration steps are pending.
+    """
+    sys.path.insert(0, str(REPO_ROOT))
+    from tools.migrations import v1_to_v2  # noqa: E402
+
+    state = v1_to_v2.detect_state(target)
+    steps = v1_to_v2.plan(target)
+    print(f"\nUpgrade check for {target}:")
+    print(f"  pinned version:        {state.pinned_version or '(none)'}")
+    print(f"  profile:               {state.profile}")
+    print(f"  has profiles/ dir:     {'yes' if state.has_profiles_dir else 'NO'}")
+    print(f"  has extends:           {'yes' if state.has_extends else 'no'}")
+    if not steps:
+        print(f"\n{_green('✓ on v2 layout — nothing to migrate.')}")
+        return 0
+    print(f"\n{_yellow(f'⚠ {len(steps)} migration step(s) pending:')}")
+    for step in steps:
+        print(f"  · {step.describe}")
+    print(f"\nRun: harness upgrade --from {state.pinned_version or 'v1.x'} --to v2.x --migrate-only")
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="harness doctor")
     parser.add_argument("--target", type=Path, default=Path.cwd())
     parser.add_argument("--fix", action="store_true",
                         help="Automate the safe fixes (re-install hook, etc.)")
+    parser.add_argument("--check-upgrade", action="store_true",
+                        help="Print pending v1.x → v2.x migration steps and exit "
+                             "(0 if on v2 layout, 1 if migration pending).")
     args = parser.parse_args(argv)
 
     target = args.target.resolve()
+    if args.check_upgrade:
+        return _check_upgrade_pending(target)
+
     print(f"\nDiagnosing harness install at: {target}\n")
     print("Substrate:")
     results = [

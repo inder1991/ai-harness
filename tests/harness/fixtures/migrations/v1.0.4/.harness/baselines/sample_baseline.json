@@ -1,0 +1,3 @@
+[
+  {"file": "/Users/somebody/proj/backend/src/foo.py", "line": 12, "rule": "Q15.spine-docstring-required"}
+]

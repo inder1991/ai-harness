@@ -56,9 +56,41 @@ def upgrade_main(argv: list[str] | None = None) -> int:
         "--auto-rollback-on-failure", action="store_true",
         help="If post-upgrade `harness check` fails, automatically rollback.",
     )
+    # Sprint 4 / S4.5 — v1.x → v2.x migration path.
+    parser.add_argument(
+        "--from", dest="from_ver",
+        help="Source version for an explicit migration (e.g., v1.0.4)",
+    )
+    parser.add_argument(
+        "--to", dest="to_ver",
+        help="Target version for an explicit migration (e.g., v2.0.0)",
+    )
+    parser.add_argument(
+        "--migrate-only", action="store_true",
+        help="Only run the v1→v2 migration; skip sync_harness fetch.",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Print the migration plan without applying changes.",
+    )
     args = parser.parse_args(argv)
     target = args.target.resolve()
     from_ver = _read_pin(target)
+
+    # If --from / --to span the v1.x → v2.x boundary, run the migration first.
+    needs_migration = bool(
+        args.from_ver and args.to_ver
+        and args.from_ver.lstrip("v").startswith("1.")
+        and args.to_ver.lstrip("v").startswith("2.")
+    )
+    if needs_migration or args.migrate_only:
+        sys.path.insert(0, str(REPO_ROOT))
+        from tools.migrations import v1_to_v2  # noqa: E402
+        rc = v1_to_v2.run(target, dry_run=args.dry_run)
+        if rc != 0:
+            return rc
+        if args.migrate_only:
+            return 0
 
     cmd = [sys.executable, str(target / "tools" / "sync_harness.py")]
     if args.ref:
