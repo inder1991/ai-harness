@@ -1,0 +1,7 @@
+schema_version: "1"
+profile: python-react
+extends:
+  - cross-cutting
+  - python-backend
+  - react-frontend
+  - self-tests

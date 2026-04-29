@@ -1,0 +1,5 @@
+schema_version: "1"
+profile: minimal
+extends:
+  - cross-cutting
+  - self-tests

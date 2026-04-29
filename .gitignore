@@ -15,6 +15,7 @@ build/coverage/
 .harness/.failure-log.jsonl.*
 .harness/.trace.jsonl
 .harness/.trace.jsonl.*
+.harness/.first_commit_seen
 
 # Generated inventories — produced by `make harness`, NOT checked in.
 # Note: `.harness/generated/README.md` IS checked in (it's the placeholder).

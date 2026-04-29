@@ -1,0 +1,6 @@
+schema_version: "1"
+profile: go-only
+extends:
+  - cross-cutting
+  - go-backend
+  - self-tests

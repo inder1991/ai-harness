@@ -1,0 +1,7 @@
+schema_version: "1"
+profile: node-react
+extends:
+  - cross-cutting
+  - node-backend
+  - react-frontend
+  - self-tests

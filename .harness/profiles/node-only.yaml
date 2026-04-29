@@ -1,0 +1,6 @@
+schema_version: "1"
+profile: node-only
+extends:
+  - cross-cutting
+  - node-backend
+  - self-tests
