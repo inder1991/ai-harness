@@ -1,0 +1,6 @@
+schema_version: "1"
+profile: react-only
+extends:
+  - cross-cutting
+  - react-frontend
+  - self-tests

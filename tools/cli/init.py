@@ -129,8 +129,10 @@ def _scaffold_minimal_substrate(staging: Path, profile: str, owner: str) -> int:
     dst_harness = staging / ".harness"
     dst_harness.mkdir(parents=True)
 
-    # Copy policy YAMLs + schemas + checks (Sprint 4 will subset by profile).
-    for sub in ("schemas", "checks", "generators"):
+    # Copy policy YAMLs + schemas + checks. Sprint 4 / S4.3 also copies
+    # `.harness/profiles/` so the consumer's `extends:` references can
+    # resolve composites locally without reaching back to the source repo.
+    for sub in ("schemas", "checks", "generators", "profiles"):
         src = src_harness / sub
         if src.is_dir():
             shutil.copytree(src, dst_harness / sub)
@@ -143,20 +145,39 @@ def _scaffold_minimal_substrate(staging: Path, profile: str, owner: str) -> int:
     (dst_harness / "baselines").mkdir(exist_ok=True)
     (dst_harness / "generated").mkdir(exist_ok=True)
 
-    # The profile yaml.
-    (dst_harness / "profile.yaml").write_text(yaml.safe_dump({
+    # The profile yaml. Sprint 4 / S4.3 — when a composite of the detected
+    # profile name exists in .harness/profiles/, write `extends: [<name>]`
+    # so the install picks up the composite's pack list (e.g., node-only
+    # extends → cross-cutting + node-backend + self-tests).
+    profile_doc: dict = {
         "schema_version": "1",
         "profile": profile,
         "owner": owner,
-    }, sort_keys=False))
+    }
+    composite = src_harness / "profiles" / f"{profile}.yaml"
+    if composite.exists():
+        profile_doc["extends"] = [profile]
+    (dst_harness / "profile.yaml").write_text(yaml.safe_dump(profile_doc, sort_keys=False))
 
     # Top-level files.
     (staging / ".harness-version").write_text(f"v{_read_card_version()}\n")
 
-    # Count rules active by globbing checks. Sprint 4 will subset by
-    # profile; for now every check is active.
+    # Estimate active rules. If a composite extends to a subdir-pack
+    # (like node-backend), count its files too; otherwise count flat.
     rules_active = sum(1 for _ in (dst_harness / "checks").glob("*.py")
                        if not _.name.startswith("_") and _.name != "__init__.py")
+    if composite.exists():
+        try:
+            comp_data = yaml.safe_load(composite.read_text(encoding="utf-8")) or {}
+            for pack in (comp_data.get("extends") or []):
+                pack_dir = dst_harness / "checks" / pack
+                if pack_dir.is_dir():
+                    rules_active += sum(
+                        1 for _ in pack_dir.glob("*.py")
+                        if not _.name.startswith("_") and _.name != "__init__.py"
+                    )
+        except yaml.YAMLError:
+            pass
     return rules_active
 
 

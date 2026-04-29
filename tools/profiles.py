@@ -144,43 +144,52 @@ def active_check_files(target: Path, profile: ResolvedProfile) -> list[Path]:
 
     Lookup order for a pack name:
       1. .harness/checks/<pack>/*.py  (Sprint 4 layout — pack subdir)
-      2. .harness/checks/*.py with rule prefix matching the pack
-         (Sprint 1-3 backward compat — flat layout)
+      2. .harness/checks/*.py         (v1.x flat layout — used when a
+         pack name has no subdir; the flat layout is included so
+         cross-cutting / self-tests / etc. still run on a Node-only
+         consumer until the migration script moves them into subdirs)
 
     A check is "active" if its module emits any rule NOT in
     `profile.disabled`. (Per-rule disabling is enforced at emit-time
     by the orchestrator; this function returns the FILES to scan.)
     """
-    out: list[Path] = []
     checks_root = target / ".harness" / "checks"
 
-    if not profile.packs_resolved:
-        # No `extends` declared → keep v1.x behavior: scan every check file.
+    def _flat_files() -> list[Path]:
+        out: list[Path] = []
         for p in sorted(checks_root.glob("*.py")):
             if p.name in {"__init__.py", "_common.py"}:
                 continue
             out.append(p)
         return out
 
+    if not profile.packs_resolved:
+        # No `extends` declared → keep v1.x behavior: every flat check file.
+        return _flat_files()
+
+    seen: set[Path] = set()
+    out: list[Path] = []
+    any_unresolved = False
     for pack in profile.packs_resolved:
         sub = checks_root / pack
         if sub.is_dir():
             for p in sorted(sub.glob("*.py")):
                 if p.name in {"__init__.py", "_common.py"}:
                     continue
-                out.append(p)
+                if p not in seen:
+                    seen.add(p)
+                    out.append(p)
             continue
-        # Backward-compat: flat layout. Treat the pack name as a directory
-        # match in the check filename or skip silently.
-        # (Real flat-layout packing is documented in S4.1's migration script.)
+        any_unresolved = True
 
-    # If we expanded packs but found nothing, fall back to flat layout
-    # so v1.x consumers don't lose their checks.
-    if not out:
-        for p in sorted(checks_root.glob("*.py")):
-            if p.name in {"__init__.py", "_common.py"}:
-                continue
-            out.append(p)
+    # If any pack name didn't resolve to a subdir, supplement with flat
+    # checks so v1.x consumers (and Node-only profiles whose `cross-cutting`
+    # / `self-tests` packs aren't migrated yet) keep their checks.
+    if any_unresolved or not out:
+        for p in _flat_files():
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
     return out
 
 
