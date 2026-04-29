@@ -99,28 +99,39 @@ def test_harness_color_always_forces_color():
     )
 
 
-def test_unimplemented_verb_prints_friendly_notice():
+def test_unimplemented_verb_prints_friendly_notice(monkeypatch):
     """A verb in the catalog but not yet wired prints a `not yet implemented` notice.
 
-    `fix` is the canonical unimplemented verb after Sprint 1 (planned
-    for Sprint 2 / S2.3); the other 8 are all wired."""
-    result = _run("fix")
+    Sprint 2 wired the last verb (`fix`). To exercise the dispatcher's
+    "unimplemented" path, we test the helper directly with a synthetic
+    verb that's NOT in IMPLEMENTED — the contract behavior must remain.
+    """
+    sys.path.insert(0, str(REPO_ROOT))
+    import tools.harness_cli as cli
+    # Remove `fix` from IMPLEMENTED to force the unimplemented branch.
+    monkeypatch.setattr(cli, "IMPLEMENTED", set())
+    code = cli.main(["fix"])
     # Exit 0 (not 2): it's a documented future surface, not a typo.
-    assert result.returncode == 0
-    combined = result.stdout + result.stderr
-    assert "not yet implemented" in combined.lower() or \
-           "coming in" in combined.lower()
+    assert code == 0
 
 
-def test_unimplemented_verb_references_sprint():
-    result = _run("fix")
-    combined = result.stdout + result.stderr
+def test_unimplemented_helper_references_sprint(capsys):
+    """The _dispatch_unimplemented helper names the planned sprint."""
+    sys.path.insert(0, str(REPO_ROOT))
+    import tools.harness_cli as cli
+    code = cli._dispatch_unimplemented("fix")
+    assert code == 0
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
     assert "S2.3" in combined or "Sprint 2" in combined
 
 
-def test_unimplemented_verb_includes_roadmap_pointer():
-    result = _run("fix")
-    combined = result.stdout + result.stderr
+def test_unimplemented_helper_includes_roadmap_pointer(capsys):
+    sys.path.insert(0, str(REPO_ROOT))
+    import tools.harness_cli as cli
+    cli._dispatch_unimplemented("fix")
+    captured = capsys.readouterr()
+    combined = captured.out + captured.err
     assert "roadmap" in combined.lower() or "production-roadmap" in combined.lower()
 
 

@@ -36,6 +36,9 @@ def dispatch(verb: str, argv: list[str]) -> int:
     if verb == "rollback":
         from tools.cli import upgrade as _upgrade
         handlers["rollback"] = _upgrade.rollback_main
+    if verb == "fix":
+        from tools.cli import fix as _fix
+        handlers["fix"] = _fix.main
     if verb in handlers:
         return handlers[verb](argv)
     raise RuntimeError(f"verb {verb!r} not registered")

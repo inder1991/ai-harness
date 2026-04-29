@@ -57,7 +57,7 @@ VERBS = (
 # documented future surface, not a typo).
 IMPLEMENTED: set[str] = {  # populated as stories land
     "init", "check", "rules", "doctor", "telemetry",
-    "baseline", "upgrade", "rollback",
+    "baseline", "upgrade", "rollback", "fix",
 }
 
 
