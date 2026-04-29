@@ -17,9 +17,11 @@ Honest table — not a marketing one.
 | Python + React | ✓ Native | All 30 rules + AI session integration + CLI + auto-fixers |
 | Python only | ✓ Native | 22 rules + AI session integration + CLI |
 | TypeScript + React (no backend) | ✓ Native | 18 rules + AI session integration + CLI |
-| Node + React | ⚠ Partial today | 18 rules + node-pack starter; 8 first-class Node checks ship in v2.2 |
-| Node only | ⚠ Partial today | 10 rules + node-pack starter; first-class in v2.2 |
-| Go / Rust / Java | 🟡 Substrate-only | AI session integration + dep policy + secret scan; `harness init` will scaffold a starter pack |
+| Node + React | ✓ Native (v2.2) | 18 cross-cutting rules + 8 first-class Node checks (HTTP wrapper, DB layer, validation, testing, security routes, storage, logging, deps) |
+| Node only | ✓ Native (v2.2) | 10 cross-cutting rules + 8 first-class Node checks |
+| Go-only | ⚠ Partial (v2.2) | Cross-cutting rules + 3 starter checks (HTTP wrapper, DB quarantine, error handling). Add more by contributing to `.harness/checks/go-backend/` |
+| Rust-only | ⚠ Partial (v2.2) | Cross-cutting rules + 3 starter checks (HTTP wrapper, DB quarantine, no-unwrap). Add more by contributing to `.harness/checks/rust-backend/` |
+| Java | 🟡 Substrate-only | AI session integration + dep policy + secret scan |
 | Vue / Svelte | 🟡 Substrate-only | Cross-cutting rules; framework rules deferred |
 
 `harness init` auto-detects your stack from manifest files (pyproject.toml, package.json, go.mod, Cargo.toml) and proposes the right profile. Override with `--profile <name>` if needed.

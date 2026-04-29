@@ -1,0 +1,6 @@
+schema_version: "1"
+profile: rust-only
+extends:
+  - cross-cutting
+  - rust-backend
+  - self-tests
