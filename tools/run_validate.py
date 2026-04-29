@@ -166,9 +166,21 @@ def _run(label: str, cmd: Sequence[str], cwd: Path = REPO_ROOT) -> int:
     For check invocations we ALSO capture stdout, parse [ERROR] lines, and
     append to .harness/.failure-log.jsonl. Lint/typecheck use the older
     streaming path (their output isn't H-16-conformant).
+
+    Sprint 3 / S3.5: when HARNESS_TRACE=1 (set by `harness check --trace`),
+    every check emits a structured event to .harness/.trace.jsonl with
+    {ts, check, start_ms, duration_ms, exit_code, n_findings}.
     """
+    # Sprint 3 / S3.5 — observability hook (lazy import; trace module
+    # exists but is opt-in).
+    try:
+        from observability import emit_event as _trace_emit
+    except ImportError:
+        _trace_emit = None  # type: ignore[assignment]
+
     print(f"\n[VALIDATE] {label} → {' '.join(cmd)}")
     start = time.monotonic()
+    n_findings = 0
     is_check = label.startswith("check:")
     if is_check:
         # Capture stdout to parse for errors; re-print verbatim so the user
@@ -209,6 +221,7 @@ def _run(label: str, cmd: Sequence[str], cwd: Path = REPO_ROOT) -> int:
         for line in result.stdout.splitlines():
             m = ERROR_LINE_RE.match(line)
             if m:
+                n_findings += 1
                 _append_failure_log(
                     rule=m.group("rule"),
                     file=m.group("file"),
@@ -221,9 +234,25 @@ def _run(label: str, cmd: Sequence[str], cwd: Path = REPO_ROOT) -> int:
         except subprocess.TimeoutExpired:
             elapsed = time.monotonic() - start
             print(f"[VALIDATE] {label} TIMED OUT after {elapsed:.1f}s")
+            if _trace_emit is not None:
+                _trace_emit(
+                    check=label.removeprefix("check:"),
+                    start_ms=start * 1000,
+                    duration_ms=elapsed * 1000,
+                    exit_code=124,  # GNU timeout convention
+                    n_findings=0,
+                )
             return 1
     elapsed = time.monotonic() - start
     print(f"[VALIDATE] {label} exited {result.returncode} ({elapsed:.1f}s)")
+    if _trace_emit is not None:
+        _trace_emit(
+            check=label.removeprefix("check:") if is_check else label,
+            start_ms=start * 1000,
+            duration_ms=elapsed * 1000,
+            exit_code=result.returncode,
+            n_findings=n_findings,
+        )
     return result.returncode
 
 

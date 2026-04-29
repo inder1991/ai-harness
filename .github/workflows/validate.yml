@@ -4,13 +4,12 @@ name: harness-validate
 # and every push to main. Without this, pre-commit hooks are bypassable
 # (`git commit -n`); CI is the safety net.
 #
-# Sprint 0 / S0.6 — cross-platform CI matrix. Runs on ubuntu + macOS,
-# Python 3.11/3.12/3.13. Catches Linux-only assumptions (line endings,
-# path separators, bash 3.2 quirks on macOS) at PR time, not at customer
-# report time. Windows is explicitly best-effort, NOT in the matrix —
-# see docs/SUPPORTED_PLATFORMS.md.
+# Sprint 0 / S0.6 — cross-platform CI matrix (ubuntu + macOS × Py 3.11/12/13).
+# Sprint 3 / S3.3 — deterministic-regen gate.
+# Sprint 3 / S3.4 — flake-zero gate.
+# Sprint 3 / S3.7 — performance regression gate.
 #
-# Permissions are read-only; the workflow does not need any secrets.
+# Permissions are read-only; no secrets.
 
 on:
   push:
@@ -21,6 +20,9 @@ permissions:
   contents: read
 
 jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Cross-platform validate (Sprint 0)
+  # ─────────────────────────────────────────────────────────────────
   validate:
     name: validate-full
     runs-on: ${{ matrix.os }}
@@ -60,7 +62,6 @@ jobs:
 
       - name: Run harness self-tests under coverage (Sprint 0 / S0.5)
         env:
-          # Sprint 0 / S0.5 — subprocess coverage hook.
           COVERAGE_PROCESS_START: ${{ github.workspace }}/pyproject.toml
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -79,3 +80,80 @@ jobs:
           name: coverage-${{ matrix.os }}-py${{ matrix.python-version }}
           path: build/coverage/
           if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────────────────────────
+  # Sprint 3 / S3.3 — Deterministic regen gate.
+  # Run `make harness` twice; the diff of .harness/generated/ must be
+  # empty. Catches non-deterministic generators (set ordering, dict
+  # ordering on older Pythons, timestamp injection, absolute paths).
+  # ─────────────────────────────────────────────────────────────────
+  byte-deterministic-regen:
+    name: byte-deterministic-regen
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install pyyaml jsonschema
+      - name: First regen
+        run: |
+          python tools/run_harness_regen.py
+          git status --short .harness/generated/
+      - name: Second regen — must be byte-identical
+        run: |
+          python tools/run_harness_regen.py
+          if [ -n "$(git diff --name-only .harness/generated/)" ]; then
+              echo "::error::Generators are NOT byte-deterministic"
+              git diff .harness/generated/
+              exit 1
+          fi
+
+  # ─────────────────────────────────────────────────────────────────
+  # Sprint 3 / S3.4 — Flake-zero gate.
+  # Run the full test suite 5 times in a single CI job. Any flaky test
+  # (passes some runs, fails others) fails the gate.
+  # ─────────────────────────────────────────────────────────────────
+  flake-zero:
+    name: flake-zero (5x suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install pyyaml jsonschema pytest pytest-asyncio hypothesis
+      - name: Run suite 5x
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "::group::Suite run $i"
+            python -m pytest tests/harness -q --tb=short --ignore=tests/harness/fixtures
+            echo "::endgroup::"
+          done
+
+  # ─────────────────────────────────────────────────────────────────
+  # Sprint 3 / S3.7 — Performance regression gate.
+  # Run `make validate-fast` 3 times; record the median wall time.
+  # Compare to the committed baseline at tools/perf/wallclock_baseline.txt;
+  # fail if >10% slower.
+  # ─────────────────────────────────────────────────────────────────
+  perf-gate:
+    name: perf-gate (validate-fast wall time)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install pyyaml jsonschema
+      - name: Measure
+        run: |
+          python tools/perf/measure_wallclock.py --runs 3 --target validate-fast

@@ -297,7 +297,11 @@ def _load_spine_paths() -> dict:
         import yaml  # local import — kept off the top-level so checks
                      # without a yaml dep aren't penalized
         data = yaml.safe_load(spine_yaml.read_text(encoding="utf-8")) or {}
-    except Exception:  # noqa: BLE001 — best-effort; missing yaml lib falls through
+    # Q17-EXEMPT: best-effort; missing yaml lib falls through to {}.
+    # spine_paths.yaml is optional substrate; if PyYAML isn't installed
+    # we silently use the fallback path tuple (which is the historical
+    # default). Failing here would make every check fail to import.
+    except Exception:  # noqa: BLE001
         data = {}
     _SPINE_PATHS_CACHE = data
     return data

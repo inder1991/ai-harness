@@ -49,13 +49,23 @@ def main(argv: list[str] | None = None) -> int:
         "--full", action="store_true",
         help="Run the full tier (typecheck + heavy checks).",
     )
+    parser.add_argument(
+        "--trace", action="store_true",
+        help="Emit per-check timing events to .harness/.trace.jsonl. "
+             "Read with `harness telemetry --slow-checks`.",
+    )
     args = parser.parse_args(argv)
+
+    # Sprint 3 / S3.5 — propagate trace flag to the orchestrator subprocess.
+    env = {**os.environ}
+    if args.trace:
+        env["HARNESS_TRACE"] = "1"
 
     # Run the orchestrator. Capture stdout for parsing; show stderr live.
     cmd = [sys.executable, str(REPO_ROOT / "tools" / "run_validate.py")]
     cmd.append("--full" if args.full else "--fast")
     proc = subprocess.run(
-        cmd, capture_output=True, text=True,
+        cmd, capture_output=True, text=True, env=env,
     )
 
     findings = parse_h16_output(proc.stdout)

@@ -53,12 +53,55 @@ def _load_entries(log_path: Path) -> list[dict]:
     return out
 
 
+def _slow_checks(args: argparse.Namespace) -> int:
+    """Sprint 3 / S3.5 — surface per-check duration percentiles from
+    .harness/.trace.jsonl. Useful for `harness doctor` flagging "check X
+    is consistently the slowest"."""
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
+    from observability import TRACE_PATH, read_events
+    events = read_events(TRACE_PATH)
+    if not events:
+        print(
+            "no trace events yet — run `harness check --trace` to populate "
+            ".harness/.trace.jsonl"
+        )
+        return 0
+    by_check: dict[str, list[float]] = {}
+    for e in events:
+        by_check.setdefault(e["check"], []).append(e["duration_ms"])
+    rows = sorted(
+        ((name, sum(ds) / len(ds), max(ds), len(ds))
+         for name, ds in by_check.items()),
+        key=lambda r: r[1], reverse=True,
+    )
+    if args.json:
+        print(json.dumps(
+            [{"check": n, "avg_ms": a, "max_ms": m, "n": c}
+             for n, a, m, c in rows],
+            indent=2, sort_keys=True,
+        ))
+        return 0
+    total = sum(len(v) for v in by_check.values())
+    print(f"\nSlowest checks ({total} events total):\n")
+    print(f"  {'Check':40} {'Avg ms':>10} {'Max ms':>10} {'#':>5}")
+    for name, avg_ms, max_ms, n in rows[:20]:
+        print(f"  {name:40} {avg_ms:>10.0f} {max_ms:>10.0f} {n:>5}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="harness telemetry")
     parser.add_argument("--since", type=str,
                         help="ISO date (e.g., 2026-04-01) — only entries since this date.")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--slow-checks", action="store_true",
+        help="Read .harness/.trace.jsonl and report per-check duration percentiles.",
+    )
     args = parser.parse_args(argv)
+
+    if args.slow_checks:
+        return _slow_checks(args)
 
     log = REPO_ROOT / ".harness" / ".failure-log.jsonl"
     entries = _load_entries(log)

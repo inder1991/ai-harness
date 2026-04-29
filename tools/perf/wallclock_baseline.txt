@@ -1,0 +1,13 @@
+# Sprint 3 / S3.7 — performance baselines
+#
+# Format: <target>: <seconds>  <YYYY-MM-DD>
+# A new measurement that's >10% slower than the recorded value fails
+# the perf-gate CI job. Update this file via:
+#
+#     python tools/perf/measure_wallclock.py --update-baseline --target validate-fast
+#
+# Sprint 3 establishes the file with a generous initial value; CI will
+# record the actual on first green run. To flush manually, delete the
+# matching line and let CI re-record (or use --update-baseline locally).
+
+validate-fast: 60.00  2026-04-29

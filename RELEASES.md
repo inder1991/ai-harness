@@ -1,5 +1,64 @@
 # Releases
 
+## v2.1.0 — Reliability + observability (signed)
+
+Sprint 3 of the v2.0 line. Adds the gates that keep v2.x reliable as
+it grows.
+
+**`harness check --trace`** — opt-in observability. Every check
+invocation emits a structured event to `.harness/.trace.jsonl` with
+`{ts, check, start_ms, duration_ms, exit_code, n_findings}`.
+Concurrent-safe (`fcntl.LOCK_EX`, same B2/B10 contract). Rotation at
+10 MB. Gitignored. Read with:
+
+```
+harness telemetry --slow-checks
+```
+
+…which ranks checks by avg duration. Used by `harness doctor` to flag
+"check X is consistently the slowest."
+
+**Q17 self-audit (S3.2)** — the Q17 rule we enforce on consumers
+(no silent exception swallow) is now applied to our own substrate
+code. New self-test `tests/harness/test_no_silent_swallow.py`:
+
+- Walks every `tools/*.py` and `.harness/checks/*.py`.
+- Finds every bare/broad except handler.
+- Requires either a logger/raise/return in the body OR a
+  `# Q17-EXEMPT: <reason>` comment within ±8 lines.
+- Plus a second test that every Q17-EXEMPT comment has a non-empty
+  reason string.
+
+Closed every silent-swallow site in v2.0.0; any future regression
+fires the test.
+
+**Deterministic-regen CI gate (S3.3)** — new `byte-deterministic-regen`
+job runs `make harness` twice and asserts `.harness/generated/` diffs
+empty. Catches non-deterministic generators (set ordering, dict
+ordering on older Pythons, timestamp injection, absolute paths).
+
+**Flake-zero CI gate (S3.4)** — new `flake-zero (5x suite)` job runs
+the full pytest suite 5 times in a row. Any test that flakes fails
+the job.
+
+**Performance regression gate (S3.7)** — new `perf-gate` job measures
+median `validate-fast` wall time across 3 runs and compares to the
+committed baseline at `tools/perf/wallclock_baseline.txt`. Fails if
+the new median is >10% slower. Update baseline with:
+
+```
+python tools/perf/measure_wallclock.py --update-baseline --target validate-fast
+```
+
+**Test surface:** 593 (v2.0.0) → **602 passed / 1 skipped** (+9
+tests; mostly observability + Q17 audit).
+
+What's deferred to subsequent sprints (per roadmap):
+- S3.1 mypy --strict on tools/ (large 150-function audit; landing
+  incrementally as files are touched)
+- S3.6 mutation testing improvement (≥20% reduction; requires a real
+  mutmut run + nightly CI job)
+
 ## v2.0.0 — DX redesign GA (signed)
 
 The full v2.0 line is here. **Sprint 0 (foundations) + Sprint 1 (CLI +
